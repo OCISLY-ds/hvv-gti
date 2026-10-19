@@ -71,18 +71,27 @@ class CliTest(unittest.TestCase):
         self.assertIn("AUSFALL", out)
         self.assertNotIn("S3", out)
 
+    def test_departures_types_option(self):
+        with FakeGti(responses=gti_responses([])) as gti:
+            run_cli(gti, "departures", "Bergedorf", "--station-id", "Master:25950", "--types", "BUS,XPRESSBUS")
+            run_cli(gti, "departures", "Bergedorf", "--station-id", "Master:25950")
+        self.assertEqual(gti.requests[0][1]["serviceTypes"], ["BUS", "XPRESSBUS"])
+        self.assertNotIn("serviceTypes", gti.requests[1][1])
+
     def test_departures_arrivals_flag(self):
         with FakeGti(responses=gti_responses([])) as gti:
             run_cli(gti, "departures", "Hauptbahnhof", "--station-id", HBF["id"], "--arrivals")
         self.assertIs(gti.requests[-1][1]["departure"], False)
 
     def test_collect_dry_run_prints_line_protocol(self):
-        with FakeGti(responses=gti_responses([departure("S5", 2, 60)])) as gti:
+        with FakeGti(responses=gti_responses([departure("S5", 2, 60, direction="Elbgaustraße")])) as gti:
             code, out, _ = run_cli(gti, "collect", "--dry-run", "--once")
         self.assertEqual(code, 0)
         lines = out.strip().splitlines()
-        self.assertEqual(len(lines), 3)  # 3 Haltestellen, nur Abfahrten
-        self.assertTrue(all(l.startswith("hvv_stop_event,") and "kind=departure" in l for l in lines))
+        self.assertEqual(len(lines), 3)  # 3 S5-Messpunkte, nur Abfahrten
+        self.assertTrue(all(l.startswith("hvv_stop_event,") and "kind=departure" in l and ",route=" in l for l in lines))
+        requests = [r[1] for r in gti.requests if r[0].endswith("departureList")]
+        self.assertEqual(len(requests), 7)  # 7 Haltestellen/Verkehrsmittel-Kombinationen, keine Ankuenfte
 
     def test_collect_requires_influx_settings(self):
         with FakeGti() as gti:

@@ -1,10 +1,11 @@
+import re
 import threading
 import unittest
 from datetime import datetime, timezone
 
 from hvv_gti import collector
 from hvv_gti.client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
-from hvv_gti.config import Config
+from hvv_gti.config import ROUTES, Config, Route
 from hvv_gti.influx import InfluxError, InfluxWriter
 
 from .fakes import FakeGti, FakeInflux
@@ -16,14 +17,21 @@ STADE = {"id": "Master:80900", "type": "STATION", "name": "Stade", "city": "Stad
 HBF = {"id": "Master:9910", "type": "STATION", "name": "Hauptbahnhof", "city": "Hamburg", "combinedName": "Hamburg Hbf"}
 
 
-def departure(line, offset, delay, **extra):
-    return {
-        "line": {"name": line, "direction": "Stade", "origin": "Elbgaustraße", "type": {"simpleType": "TRAIN"}},
+STADE_ROUTE = Route("S5 Stade", "S5", "SBAHN", "Stade", STADE["id"], directions=("Stade",))
+HBF_ROUTE = Route("S5 Hbf", "S5", "SBAHN", "Hauptbahnhof", HBF["id"])
+TEST_ROUTES = (STADE_ROUTE, HBF_ROUTE)
+
+
+def departure(line, offset, delay, direction="Stade", **extra):
+    dep = {
+        "line": {"name": line, "direction": direction, "origin": "Elbgaustraße", "type": {"simpleType": "TRAIN"}},
         "timeOffset": offset,
-        "delay": delay,
         "serviceId": 1000 + offset,
         **extra,
     }
+    if delay is not None:
+        dep["delay"] = delay
+    return dep
 
 
 def gti_responses(departures):
@@ -115,17 +123,20 @@ class ClientTest(unittest.TestCase):
 
 class ParseEventsTest(unittest.TestCase):
     stop = collector.Stop("Stade", STADE)
+    routes = (STADE_ROUTE,)
+
+    def parse(self, departures, reference=REFERENCE, routes=None, kind="departure", unmatched=None):
+        return collector.parse_events({"departures": departures}, reference, self.stop, kind, routes or self.routes, unmatched)
 
     def test_filters_line_and_computes_planned_time(self):
-        response = {
-            "departures": [
+        lines = self.parse(
+            [
                 departure("S5", 4, 120),
                 departure("S3", 5, 0),
                 departure("S5", 34, 0, cancelled=True),
                 departure("S5", 19, 0, extra=True),
             ]
-        }
-        lines = collector.parse_events(response, REFERENCE, self.stop, "departure", "S5")
+        )
         self.assertEqual(len(lines), 3)
         planned_ns = int(REFERENCE.timestamp() + 4 * 60) * 1_000_000_000
         self.assertTrue(lines[0].endswith(f" {planned_ns}"))
@@ -134,6 +145,7 @@ class ParseEventsTest(unittest.TestCase):
         self.assertIn("cancelled=1i", lines[1])
         self.assertIn("extra=1i", lines[2])
         self.assertIn("line=S5", lines[0])
+        self.assertIn("route=S5\\ Stade", lines[0])
         self.assertIn("kind=departure", lines[0])
         self.assertIn("station=Stade", lines[0])
 
@@ -141,46 +153,88 @@ class ParseEventsTest(unittest.TestCase):
         d = departure("S5", 1, 0)
         d["line"].pop("direction")
         d["line"]["origin"] = ""
-        line = collector.parse_events({"departures": [d]}, REFERENCE, self.stop, "departure", "S5")[0]
+        line = self.parse([d], routes=(Route("alle", "S5", "SBAHN", "Stade", STADE["id"]),))[0]
         self.assertIn("direction=-", line)
         self.assertIn("origin=-", line)
 
-    def test_missing_delay_is_zero(self):
-        d = departure("S5", 1, None)
-        lines = collector.parse_events({"departures": [d]}, REFERENCE, self.stop, "arrival", "S5")
-        self.assertIn("delay_s=0i", lines[0])
+    def test_missing_delay_has_no_delay_field(self):
+        lines = self.parse([departure("S5", 1, None), departure("S5", 2, None, cancelled=True)], kind="arrival")
+        self.assertNotIn("delay_s", lines[0])
+        self.assertIn("cancelled=0i", lines[0])
+        self.assertIn("delay_s=0i", lines[1])  # Ausfall ohne Echtzeitwert zaehlt weiter als Ausfall
+
+    def test_zero_delay_is_kept(self):
+        self.assertIn("delay_s=0i", self.parse([departure("S5", 1, 0)])[0])
 
     def test_same_event_in_two_polls_has_same_timestamp(self):
-        first = collector.parse_events({"departures": [departure("S5", 5, 0)]}, REFERENCE, self.stop, "departure", "S5")
+        first = self.parse([departure("S5", 5, 0)])
         later = datetime(2026, 3, 10, 7, 42, tzinfo=timezone.utc)
-        second = collector.parse_events({"departures": [departure("S5", 4, 180)]}, later, self.stop, "departure", "S5")
+        second = self.parse([departure("S5", 4, 180)], reference=later)
         ts = lambda line: line.rsplit(" ", 1)[1]
         self.assertEqual(ts(first[0]), ts(second[0]))
+
+    def test_first_matching_route_wins_and_empty_directions_catch_all(self):
+        routes = (
+            Route("nach Aumuehle", "S7", "SBAHN", "Stade", STADE["id"], directions=("Aumühle",)),
+            Route("nach Hamburg", "S7", "SBAHN", "Stade", STADE["id"]),
+        )
+        lines = self.parse(
+            [departure("S7", 1, 0, direction="Aumühle"), departure("S7", 2, 0, direction="Hamburg Hbf")], routes=routes
+        )
+        self.assertIn("route=nach\\ Aumuehle", lines[0])
+        self.assertIn("route=nach\\ Hamburg", lines[1])
+
+    def test_direction_match_is_case_insensitive_substring(self):
+        routes = (Route("x", "S5", "SBAHN", "Stade", STADE["id"], directions=("elbgaustra",)),)
+        self.assertEqual(len(self.parse([departure("S5", 1, 0, direction="Elbgaustraße")], routes=routes)), 1)
+
+    def test_unmatched_direction_is_kept_under_generated_route_and_warned_once(self):
+        unmatched: set = set()
+        with self.assertLogs("hvv_gti.collector", level="WARNING") as logs:
+            first = self.parse([departure("S5", 1, 0, direction="Hamburg Hbf")], unmatched=unmatched)
+            self.parse([departure("S5", 2, 0, direction="Hamburg Hbf")], unmatched=unmatched)
+        self.assertIn("route=S5\\ Stade\\ →\\ Hamburg\\ Hbf", first[0])
+        self.assertEqual(len(logs.records), 1)
+
+    def test_same_line_in_other_group_without_route_is_ignored(self):
+        self.assertEqual(self.parse([departure("X30", 1, 0)]), [])
+
+
+def by_group(table):
+    """Antwort je (Haltestellen-ID, Verkehrsmittel), wie sie der echte GTI-Server trennt."""
+
+    def respond(body):
+        return {"returnCode": "OK", "departures": table.get((body["station"]["id"], body["serviceTypes"][0]), [])}
+
+    return respond
 
 
 class CollectTest(unittest.TestCase):
     def cfg(self, **kw):
-        return Config(stations=(("Stade", None), ("Hauptbahnhof", None)), **{"collect_arrivals": True, **kw})
+        return Config(routes=TEST_ROUTES, **{"collect_arrivals": True, **kw})
+
+    def stops(self, client, cfg):
+        return collector.resolve_stops(client, cfg.routes)
 
     def test_collect_once_all_stations_and_kinds(self):
         responses = gti_responses([departure("S5", 2, 60), departure("S3", 3, 0)])
         with FakeGti(responses=responses) as gti:
             client = client_for(gti)
             cfg = self.cfg()
-            stops = [collector.resolve_station(client, n, i) for n, i in cfg.stations]
-            lines = collector.collect_once(client, stops, cfg, now=NOW)
+            lines = collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
         self.assertEqual(len(lines), 4)  # 2 Stationen x (Abfahrt + Ankunft), je 1 S5
         self.assertEqual(sum("kind=arrival" in l for l in lines), 2)
-        # checkName liefert die STATION, nicht die ADDRESS; Hbf wird per exaktem Namen gewaehlt
         lists = [r for r in gti.requests if r[0].endswith("departureList")]
         self.assertEqual([r[1]["station"]["id"] for r in lists], ["Master:80900"] * 2 + ["Master:9910"] * 2)
+        self.assertTrue(all(r[1]["serviceTypes"] == ["SBAHN"] for r in lists))
 
     def test_arrivals_can_be_disabled(self):
         with FakeGti(responses=gti_responses([departure("S5", 2, 0)])) as gti:
             client = client_for(gti)
-            lines = collector.collect_once(client, [collector.Stop("Stade", STADE)], self.cfg(collect_arrivals=False), now=NOW)
-        self.assertEqual(len(lines), 1)
-        self.assertEqual(len([r for r in gti.requests if r[0].endswith("departureList")]), 1)
+            cfg = self.cfg(collect_arrivals=False)
+            lines = collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
+        self.assertEqual(len(lines), 2)  # beide Haltestellen, nur Abfahrten
+        self.assertEqual(len([r for r in gti.requests if r[0].endswith("departureList")]), 2)
 
     def test_resolve_by_id_skips_check_name(self):
         with FakeGti(responses=gti_responses([])) as gti:
@@ -188,10 +242,81 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(stop.sd_name["id"], "Master:80900")
         self.assertEqual(gti.requests, [])
 
+    def test_resolve_by_name_prefers_station_over_address(self):
+        with FakeGti(responses=gti_responses([])) as gti:
+            stop = collector.resolve_station(client_for(gti), "Hauptbahnhof", None)
+        self.assertEqual(stop.sd_name["id"], "Master:9910")
+
     def test_resolve_unknown_station(self):
         with FakeGti(responses={"checkName": {"returnCode": "OK", "results": []}}) as gti:
             with self.assertRaises(GtiError):
                 collector.resolve_station(client_for(gti), "Nirgendwo", None)
+
+    def test_resolve_stops_deduplicates_stations(self):
+        routes = ROUTES
+        with FakeGti(responses=gti_responses([])) as gti:
+            stops = collector.resolve_stops(client_for(gti), routes)
+        self.assertEqual(set(stops), {"Stade", "Neugraben", "Hauptbahnhof", "Bergedorf", "Harburg Rathaus"})
+
+    def test_group_routes_one_request_per_station_and_service_type(self):
+        groups = collector.group_routes(ROUTES)
+        keys = [key for key, _ in groups]
+        self.assertEqual(len(groups), 7)
+        self.assertEqual(len(set(keys)), 7)
+        self.assertIn(("Bergedorf", "Master:25950", "BUS"), keys)
+        self.assertIn(("Bergedorf", "Master:25950", "XPRESSBUS"), keys)
+        self.assertIn(("Harburg Rathaus", "Master:40950", "XPRESSBUS"), keys)
+
+    def test_collect_once_real_routes(self):
+        table = {
+            ("Master:8000089", "SBAHN"): [departure("S5", 3, 60, direction="Neugraben"), departure("S3", 4, 0)],
+            ("Master:41951", "SBAHN"): [
+                departure("S5", 5, 0, direction="Buxtehude"),
+                departure("S5", 6, 120, direction="Elbgaustraße"),
+            ],
+            ("Master:9910950", "SBAHN"): [departure("S5", 7, 0, direction="Neugraben")],
+            ("Master:25950", "SBAHN"): [departure("S7", 8, 0, direction="Aumühle")],
+            ("Master:25950", "BUS"): [
+                departure("S7-SEV", 9, None, direction="U S Berliner Tor (Beim Strohhause)"),
+                departure("X30", 10, 0, direction="S Harburg Rathaus (Hölertwiete)"),  # gehoert zur XPRESSBUS-Abfrage
+                departure("113", 11, 0),
+            ],
+            ("Master:25950", "XPRESSBUS"): [departure("X30", 10, 60, direction="S Harburg Rathaus (Hölertwiete)")],
+            ("Master:40950", "XPRESSBUS"): [departure("X30", 12, 0, direction="Bf. Bergedorf")],
+        }
+        cfg = Config(min_request_interval=0)
+        with FakeGti(responses={"departureList": by_group(table)}) as gti:
+            client = client_for(gti)
+            stops = {name: collector.Stop(name, {"id": sid}) for name, sid in {(r.station, r.station_id) for r in cfg.routes}}
+            lines = collector.collect_once(client, stops, cfg, now=NOW)
+        requests = [r[1] for r in gti.requests if r[0].endswith("departureList")]
+        self.assertEqual(len(requests), 7)
+        self.assertEqual({r["maxList"] for r in requests if r["serviceTypes"] == ["BUS"]}, {120})
+        routes = [re.search(r"route=((?:\\.|[^, ])+)", l).group(1) for l in lines]
+        self.assertEqual(
+            routes,
+            [
+                "S5\\ Stade\\ →\\ Neugraben",
+                "S5\\ Neugraben\\ →\\ Stade",
+                "S5\\ Neugraben\\ →\\ Elbgaustraße",
+                "S5\\ Elbgaustraße\\ →\\ Neugraben",
+                "S7\\ Bergedorf\\ →\\ Aumühle",
+                "S7\\ Bergedorf\\ →\\ Hamburg",
+                "X30\\ Bergedorf\\ →\\ Harburg",
+                "X30\\ Harburg\\ →\\ Bergedorf",
+            ],
+        )
+        sev = next(l for l in lines if "line=S7-SEV" in l)
+        self.assertNotIn("delay_s", sev)  # Bus ohne Echtzeit
+        self.assertEqual(sum("line=X30" in l for l in lines), 2)  # die X30 aus der BUS-Antwort wird nicht doppelt gezaehlt
+
+    def test_full_list_warns(self):
+        table = {("Master:80900", "SBAHN"): [departure("S5", i, 0) for i in range(1, 41)]}
+        with FakeGti(responses={"departureList": by_group(table)}) as gti, self.assertLogs("hvv_gti.collector", level="WARNING") as logs:
+            client = client_for(gti)
+            cfg = self.cfg(collect_arrivals=False)
+            collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
+        self.assertTrue(any("Liste voll" in r.getMessage() for r in logs.records))
 
     def test_partial_failure_is_tolerated_total_failure_raises(self):
         calls = {"n": 0}
@@ -203,22 +328,26 @@ class CollectTest(unittest.TestCase):
             return {"returnCode": "OK", "departures": [departure("S5", 2, 0)]}
 
         with FakeGti(responses={"departureList": flaky}) as gti:
-            stops = [collector.Stop("Stade", STADE)]
-            lines = collector.collect_once(client_for(gti), stops, self.cfg(), now=NOW)
-        self.assertEqual(len(lines), 1)
+            client = client_for(gti)
+            cfg = self.cfg()
+            lines = collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
+        self.assertEqual(len(lines), 2)  # 4 Aufrufe, jeder zweite scheitert
 
         with FakeGti(responses={"departureList": {"returnCode": "ERROR_COMM"}}) as gti:
+            client = client_for(gti)
+            cfg = self.cfg()
             with self.assertRaises(GtiError):
-                collector.collect_once(client_for(gti), [collector.Stop("Stade", STADE)], self.cfg(), now=NOW)
+                collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
 
     def test_denied_arrivals_are_skipped_and_remembered(self):
-        stops = [collector.Stop("Stade", STADE), collector.Stop("Hauptbahnhof", HBF)]
         with FakeGti(responses={"departureList": departures_only([departure("S5", 2, 60)])}) as gti:
             denied: set[str] = set()
             client = client_for(gti)
-            first = collector.collect_once(client, stops, self.cfg(), now=NOW, denied=denied)
+            cfg = self.cfg()
+            stops = self.stops(client, cfg)
+            first = collector.collect_once(client, stops, cfg, now=NOW, denied=denied)
             requests_after_first = len(gti.requests)
-            second = collector.collect_once(client, stops, self.cfg(), now=NOW, denied=denied)
+            second = collector.collect_once(client, stops, cfg, now=NOW, denied=denied)
         self.assertEqual(len(first), 2)  # nur die beiden Abfahrten
         self.assertTrue(all("kind=departure" in l for l in first + second))
         self.assertEqual(denied, {"arrival"})
@@ -228,19 +357,22 @@ class CollectTest(unittest.TestCase):
 
     def test_everything_denied_raises(self):
         with FakeGti(responses={"departureList": (403, ARRIVAL_DENIED[1])}) as gti:
+            client = client_for(gti)
+            cfg = self.cfg()
             with self.assertRaises(GtiPermissionError):
-                collector.collect_once(client_for(gti), [collector.Stop("Stade", STADE)], self.cfg(), now=NOW)
+                collector.collect_once(client, self.stops(client, cfg), cfg, now=NOW)
 
     def test_auth_error_propagates(self):
         with FakeGti() as gti:
             bad = GtiClient("tester", "falsch", base_url=gti.url, min_interval=0)
+            cfg = self.cfg()
             with self.assertRaises(GtiAuthError):
-                collector.collect_once(bad, [collector.Stop("Stade", STADE)], self.cfg(), now=NOW)
+                collector.collect_once(bad, self.stops(bad, cfg), cfg, now=NOW)
 
 
 class RunTest(unittest.TestCase):
     def test_run_once_writes_to_influx(self):
-        responses = gti_responses([departure("S5", 2, 90)])
+        responses = gti_responses([departure("S5", 2, 90, direction="Elbgaustraße")])
         with FakeGti(responses=responses) as gti, FakeInflux() as influx:
             cfg = Config(poll_interval=0.01, collect_arrivals=True)
             writer = InfluxWriter(influx.url, "Bergedorf", "hvv", "tok")
@@ -251,8 +383,9 @@ class RunTest(unittest.TestCase):
         self.assertIn("bucket=hvv", path)
         self.assertIn("precision=ns", path)
         self.assertEqual(auth, "Token tok")
-        self.assertEqual(len(body.splitlines()), 6)
+        self.assertEqual(len(body.splitlines()), 6)  # 3 S5-Messpunkte x (Abfahrt + Ankunft)
         self.assertIn("hvv_stop_event,", body)
+        self.assertIn("route=", body)
 
     def test_run_once_reports_failure_exit_code(self):
         responses = gti_responses([departure("S5", 2, 0)])

@@ -38,7 +38,7 @@ Folgerungen: Die Antwortgröße ist unkritisch (bei 30 s Abstand rund 140 MB Tra
 ### Noch offen
 
 1. **Enthalten `startDateTime`/`endDateTime` die Verspätung schon, oder muss `realtimeDelay` addiert werden?** Die Stichprobe hatte nur Verspätungen bis 10 s. Zum Klären bei einem Zug mit mehreren Minuten Verspätung (siehe Dashboard) `probe-vehicles --line S5` wiederholen und die Segmentzeiten mit der Abfahrtstafel vergleichen.
-2. **Echtzeit-Anteil bei Bussen** (die S-Bahn ist zu 100 % echtzeitfähig, Busse nicht zwingend): `probe-vehicles --types METROBUS`.
+2. **Echtzeit-Anteil bei Bussen** (die S-Bahn ist zu 100 % echtzeitfähig, Busse nicht zwingend): `probe-vehicles --types METROBUS`. Die Abfahrtstafel liefert für einzelne Busfahrten keinen `delay`-Wert (im Trockenlauf vom 19.10.2026 2 von 22 Zeilen, beide beim Ersatzbus S7-SEV). Der Collector erfasst das als fehlenden Wert (siehe README).
 3. **Verhalten bei Störungen**, wenn Fahrten ausfallen oder Echtzeit abreißt.
 
 ## Positionsberechnung

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from hvv_gti.client import gti_time, sign
-from hvv_gti.config import STATIONS, Config, ConfigError, load_dotenv
+from hvv_gti.config import ROUTES, Config, ConfigError, load_dotenv
 from hvv_gti.influx import line_protocol
 
 
@@ -44,10 +44,8 @@ class LineProtocolTest(unittest.TestCase):
 class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         cfg = Config.from_env({})
-        self.assertEqual(cfg.line, "S5")
-        self.assertEqual([name for name, _ in cfg.stations], ["Stade", "Neugraben", "Hauptbahnhof"])
-        self.assertTrue(all(station_id.startswith("Master:") for _, station_id in STATIONS))
-        self.assertEqual(cfg.service_types, ("SBAHN",))
+        self.assertEqual(cfg.routes, ROUTES)
+        self.assertEqual({r.line for r in cfg.routes}, {"S5", "S7", "S7-SEV", "X30"})
         self.assertFalse(cfg.collect_arrivals)
 
     def test_overrides_and_bool(self):
@@ -55,15 +53,15 @@ class ConfigTest(unittest.TestCase):
             {
                 "HVV_COLLECT_ARRIVALS": "true",  # wird ignoriert
                 "HVV_POLL_INTERVAL": "30",
-                "HVV_SERVICE_TYPES": "SBAHN, UBAHN",
+                "HVV_LINE": "S3",  # veraltet, wird ignoriert
+                "HVV_SERVICE_TYPES": "UBAHN",  # veraltet, wird ignoriert
                 "INFLUX_URL": "http://x:1/",
                 "HVV_STATIONS": "A;B",
             }
         )
-        self.assertEqual(cfg.stations, STATIONS)  # nicht per Umgebung aenderbar
+        self.assertEqual(cfg.routes, ROUTES)  # nicht per Umgebung aenderbar
         self.assertFalse(cfg.collect_arrivals)
         self.assertEqual(cfg.poll_interval, 30.0)
-        self.assertEqual(cfg.service_types, ("SBAHN", "UBAHN"))
         self.assertEqual(cfg.influx_url, "http://x:1")
 
     def test_secrets_not_in_repr(self):
@@ -79,6 +77,26 @@ class ConfigTest(unittest.TestCase):
         self.assertIn("INFLUX_TOKEN", str(ctx.exception))
         Config(gti_user="u", gti_password="p").require_gti()
         Config(influx_org="o", influx_token="t").require_influx()
+
+
+class RoutesTest(unittest.TestCase):
+    def test_station_ids_are_master_ids(self):
+        self.assertTrue(all(r.station_id.startswith("Master:") for r in ROUTES))
+
+    def test_catch_all_routes_come_after_specific_ones(self):
+        seen_catch_all: set[tuple[str, str, str]] = set()
+        for r in ROUTES:
+            key = (r.station_id, r.service_type, r.line)
+            self.assertNotIn(key, seen_catch_all, f"{r.name}: Route steht hinter einer Route ohne Richtungsfilter")
+            if not r.directions:
+                seen_catch_all.add(key)
+
+    def test_routes_cover_requested_lines(self):
+        names = {r.name for r in ROUTES}
+        self.assertIn("S5 Stade → Neugraben", names)
+        self.assertIn("S7 Bergedorf → Hamburg", names)
+        self.assertIn("X30 Bergedorf → Harburg", names)
+        self.assertIn("X30 Harburg → Bergedorf", names)
 
 
 class DotenvTest(unittest.TestCase):

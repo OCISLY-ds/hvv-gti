@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
-from .config import Config
+from .config import Config, Route
 from .influx import InfluxError, InfluxWriter, line_protocol
 
 log = logging.getLogger("hvv_gti.collector")
@@ -39,38 +39,88 @@ def resolve_station(client: GtiClient, name: str, station_id: str | None) -> Sto
     return Stop(name, {k: chosen[k] for k in keys if k in chosen})
 
 
-def parse_events(response: dict, reference: datetime, stop: Stop, kind: str, line: str) -> list[str]:
-    """`reference` ist die (auf die Minute gerundete) Anfragezeit; timeOffset ist planmaessig, delay separat."""
+def match_route(routes: list[Route], direction: str) -> Route | None:
+    folded = direction.casefold()
+    for route in routes:
+        if not route.directions or any(d.casefold() in folded for d in route.directions):
+            return route
+    return None
+
+
+def parse_events(
+    response: dict,
+    reference: datetime,
+    stop: Stop,
+    kind: str,
+    routes: tuple[Route, ...] | list[Route],
+    unmatched: set[tuple[str, str, str]] | None = None,
+) -> list[str]:
+    """`reference` ist die (auf die Minute gerundete) Anfragezeit; timeOffset ist planmaessig, delay separat.
+
+    Fahrten von Linien ohne Route werden ignoriert. Passt bei einer bekannten Linie keine Richtung, wird die
+    Fahrt trotzdem gespeichert (route = "<Linie> <Haltestelle> -> <Richtung>") und einmalig gewarnt.
+    Fehlt `delay` (kein Echtzeitwert), fehlt auch das Feld `delay_s`; nur Ausfaelle bekommen 0.
+    """
+    by_line: dict[str, list[Route]] = {}
+    for route in routes:
+        by_line.setdefault(route.line, []).append(route)
     lines = []
     for dep in response.get("departures", []):
         service = dep.get("line", {})
-        if service.get("name") != line:
+        candidates = by_line.get(service.get("name"))
+        if not candidates:
             continue
+        direction = service.get("direction") or "-"
+        route = match_route(candidates, direction)
+        if route:
+            route_name = route.name
+        else:
+            route_name = f"{service['name']} {stop.label} → {direction}"
+            key = (service["name"], stop.label, direction)
+            if unmatched is not None and key not in unmatched:
+                unmatched.add(key)
+                log.warning("Keine Strecke fuer %s ab %s Richtung '%s', gespeichert als '%s'", *key, route_name)
         planned = reference + timedelta(minutes=int(dep.get("timeOffset", 0)))
-        fields = {
-            "delay_s": int(dep.get("delay") or 0),
-            "cancelled": 1 if dep.get("cancelled") else 0,
-            "extra": 1 if dep.get("extra") else 0,
-        }
+        cancelled = bool(dep.get("cancelled"))
+        fields: dict[str, int] = {"cancelled": 1 if cancelled else 0, "extra": 1 if dep.get("extra") else 0}
+        if dep.get("delay") is not None:
+            fields["delay_s"] = int(dep["delay"])
+        elif cancelled:
+            fields["delay_s"] = 0
         if dep.get("serviceId") is not None:
             fields["service_id"] = int(dep["serviceId"])
         tags = {
-            "line": line,
+            "route": route_name,
+            "line": service["name"],
             "station": stop.label,
             "kind": kind,
-            "direction": service.get("direction") or "-",
+            "direction": direction,
             "origin": service.get("origin") or "-",
         }
         lines.append(line_protocol(MEASUREMENT, tags, fields, int(planned.timestamp()) * 1_000_000_000))
     return lines
 
 
+def group_routes(routes: tuple[Route, ...]) -> list[tuple[tuple[str, str, str], list[Route]]]:
+    """Gruppiert nach (Haltestelle, Haltestellen-ID, Verkehrsmittel): pro Gruppe ein departureList-Aufruf."""
+    groups: dict[tuple[str, str, str], list[Route]] = {}
+    for route in routes:
+        groups.setdefault((route.station, route.station_id, route.service_type), []).append(route)
+    return list(groups.items())
+
+
+def resolve_stops(client: GtiClient, routes: tuple[Route, ...]) -> dict[str, Stop]:
+    stations = dict.fromkeys((r.station, r.station_id) for r in routes)
+    return {name: resolve_station(client, name, sid) for name, sid in stations}
+
+
 def collect_once(
     client: GtiClient,
-    stops: list[Stop],
+    stops: dict[str, Stop],
     cfg: Config,
     now: datetime | None = None,
     denied: set[str] | None = None,
+    unmatched: set[tuple[str, str, str]] | None = None,
 ) -> list[str]:
     """`denied` sammelt Arten (departure/arrival), die der Account nicht abfragen darf; sie werden danach uebersprungen."""
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(second=0, microsecond=0)
@@ -81,7 +131,10 @@ def collect_once(
     lines: list[str] = []
     errors: list[GtiError] = []
     ok = 0
-    for stop in stops:
+    for (station, _, service_type), routes in group_routes(cfg.routes):
+        stop = stops[station]
+        max_list = max(r.max_list for r in routes)
+        wanted = ", ".join(sorted({r.line for r in routes}))
         for kind, is_departure in kinds:
             if kind in denied:
                 continue
@@ -89,10 +142,10 @@ def collect_once(
                 response = client.departure_list(
                     stop.sd_name,
                     reference,
-                    max_list=cfg.max_list,
+                    max_list=max_list,
                     max_time_offset=cfg.max_time_offset,
                     departure=is_departure,
-                    service_types=list(cfg.service_types),
+                    service_types=[service_type],
                 )
             except GtiAuthError:
                 raise
@@ -102,15 +155,15 @@ def collect_once(
                 errors.append(exc)
                 continue
             except GtiError as exc:
-                log.error("%s %s: %s", stop.label, kind, exc)
+                log.error("%s %s %s: %s", stop.label, service_type, kind, exc)
                 errors.append(exc)
                 continue
             ok += 1
-            events = parse_events(response, reference, stop, kind, cfg.line)
+            events = parse_events(response, reference, stop, kind, routes, unmatched)
             total = len(response.get("departures", []))
-            log.info("%s %s: %d Eintraege, %d davon Linie %s", stop.label, kind, total, len(events), cfg.line)
-            if total and not events:
-                log.warning("%s %s: keine Fahrten der Linie %s in der Antwort", stop.label, kind, cfg.line)
+            log.info("%s %s %s: %d Eintraege, %d davon Linie %s", stop.label, service_type, kind, total, len(events), wanted)
+            if total >= max_list:
+                log.warning("%s %s %s: Liste voll (%d Eintraege), Fahrten koennen fehlen", stop.label, service_type, kind, total)
             lines.extend(events)
     if errors and not ok:
         raise errors[-1]
@@ -125,14 +178,15 @@ def run(
     *,
     once: bool = False,
 ) -> int:
-    stops: list[Stop] | None = None
+    stops: dict[str, Stop] | None = None
     denied: set[str] = set()
+    unmatched: set[tuple[str, str, str]] = set()
     failures = 0
     while not stop_event.is_set():
         try:
             if stops is None:
-                stops = [resolve_station(client, name, sid) for name, sid in cfg.stations]
-            lines = collect_once(client, stops, cfg, denied=denied)
+                stops = resolve_stops(client, cfg.routes)
+            lines = collect_once(client, stops, cfg, denied=denied, unmatched=unmatched)
             if writer is None:
                 print("\n".join(lines), flush=True)
             else:

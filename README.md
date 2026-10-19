@@ -1,6 +1,6 @@
 # hvv-gti
 
-Werkzeuge für die HVV-Schnittstelle (Geofox GTI, <https://gti.geofox.de/>): Pünktlichkeitsstatistik der **S5 Stade ↔ Hamburg Hbf** in Grafana und eine Bewertung, ob eine Live-Karte mit Bussen und Bahnen machbar ist.
+Werkzeuge für die HVV-Schnittstelle (Geofox GTI, <https://gti.geofox.de/>): Pünktlichkeitsstatistik der **S5 (Stade – Neugraben – Hamburg), S7 (Bergedorf – Hamburg) und X30 (Bergedorf ↔ Harburg)** in Grafana und eine Bewertung, ob eine Live-Karte mit Bussen und Bahnen machbar ist.
 
 ```
 GTI (departureList) --> Collector (Docker) --> InfluxDB (Bucket hvv) --> Grafana-Dashboard
@@ -9,7 +9,7 @@ GTI (departureList) --> Collector (Docker) --> InfluxDB (Bucket hvv) --> Grafana
 - `hvv_gti/` – Python (nur Standardbibliothek plus `tzdata`): GTI-Client mit HMAC-Signatur, Collector, Influx-Writer, CLI
 - `grafana/dashboards/hvv-s5-puenktlichkeit.json` – Dashboard (Flux)
 - `docs/live-map-evaluation.md` – Machbarkeit der Live-Karte
-- `tests/` – 44 Tests gegen Fake-Server (`python3 -m unittest discover -s tests -t .`)
+- `tests/` – 58 Tests gegen Fake-Server (`python3 -m unittest discover -s tests -t .`)
 
 Branches: `main` = stabiler Stand, `dev` = Entwicklung.
 
@@ -38,7 +38,7 @@ Eine Retention von 1–2 Jahren reicht: es entstehen nur ein paar tausend Punkte
 ```bash
 python3 -m hvv_gti check-name Stade                   # Haltestelle und ID finden
 python3 -m hvv_gti departures Stade --line S5         # Abfahrten mit Verspätung
-python3 -m hvv_gti departures Neugraben --line S5
+python3 -m hvv_gti departures Bergedorf --line X30 --types XPRESSBUS
 python3 -m hvv_gti collect --dry-run --once           # gibt nur Line Protocol aus
 ```
 
@@ -64,16 +64,32 @@ Der Container läuft im Host-Netz (`INFLUX_URL=http://localhost:8086`, der Port 
 
 Per API geht dasselbe mit einem Service-Account-Token (Rolle Admin): `POST /api/datasources` mit den Werten oben, danach `POST /api/dashboards/db` mit dem Dashboard-JSON. Der Token gehört nur in die git-ignorierte `.env` (`GRAFANA_URL`, `GRAFANA_TOKEN`, `INFLUX_READ_TOKEN`).
 
+Das Dashboard hat oben die Filter *Strecke* (z. B. `S5 Stade → Neugraben`, `S7 Bergedorf → Hamburg`, `X30 Harburg → Bergedorf`), *Linie*, *Station*, *Art*, *Richtung*, *Von* und die Verspätungsschwelle. Die Filter hängen voneinander ab: Wer eine Strecke wählt, sieht bei den übrigen nur noch passende Werte. Neben Pünktlichkeit, Ø Verspätung, Ausfallquote und Fahrten zeigt es den Echtzeit-Anteil und eine Tabelle mit Kennzahlen je Strecke, Station und Richtung.
+
 ## Wie gemessen wird
 
-- Alle 60 s wird `departureList` je Haltestelle abgefragt (Abfahrten, optional auch Ankünfte).
-- Ein Ereignis ist eine Zeile `hvv_stop_event`: Tags `line`, `station`, `kind` (`departure`/`arrival`), `direction`, `origin`; Felder `delay_s`, `cancelled`, `extra`, `service_id`. Der **Zeitstempel ist die planmäßige Zeit**. Dasselbe Ereignis wird bei jeder Abfrage erneut geschrieben und überschreibt sich damit: gespeichert bleibt **die zuletzt gemeldete Verspätung vor der Fahrt**.
+- Alle 60 s wird `departureList` je Messpunkt abgefragt (7 Aufrufe nacheinander, gruppiert nach Haltestelle und Verkehrsmittel). Die Strecken stehen fest im Code (`ROUTES` in `hvv_gti/config.py`, mit GTI-IDs), nicht in der `.env`.
+- Ein Ereignis ist eine Zeile `hvv_stop_event`: Tags `route`, `line`, `station`, `kind` (`departure`/`arrival`), `direction`, `origin`; Felder `delay_s`, `cancelled`, `extra`, `service_id`. Der **Zeitstempel ist die planmäßige Zeit**. Dasselbe Ereignis wird bei jeder Abfrage erneut geschrieben und überschreibt sich damit: gespeichert bleibt **die zuletzt gemeldete Verspätung vor der Fahrt**.
+- **Fehlende Echtzeit:** Meldet die GTI für eine Abfahrt keine Verspätung (`delay` fehlt, das kann bei Bussen vorkommen), fehlt auch das Feld `delay_s`. Solche Fahrten zählen weder als pünktlich noch als verspätet. Das Dashboard weist dafür den **Echtzeit-Anteil** aus. Ausfälle bekommen `delay_s=0`.
 - **Pünktlich** heißt Verspätung unter der Schwelle (Standard 3 Minuten, im Dashboard wählbar). Ausfälle zählen nicht als verspätet, sondern werden getrennt als Ausfallquote ausgewiesen.
-- **Stade → Hbf:** Stand 19.10.2026 fährt die S5 nicht durchgehend, sondern geteilt (live gemessen): Stade–Neugraben und Neugraben–Elbgaustraße über den Hbf, Zugwechsel in Neugraben. Deshalb liegt Neugraben bei den Haltestellen. Diese stehen fest im Code (`STATIONS` in `hvv_gti/config.py`, mit GTI-IDs), nicht in der `.env`. Dashboard-Filter:
-  - Stade-Zweig: *Station* = `Stade` (Abfahrt nach Neugraben, am Start meist nahe 0) und *Station* = `Neugraben`, *Richtung* = `Stade`.
-  - Hbf-Zweig: *Station* = `Hauptbahnhof`, *Richtung* = `Elbgaustraße`: Abfahrt der Züge aus Neugraben am Hbf, also Ankunftsverspätung plus Haltezeit.
-  - Fährt die S5 wieder durchgehend, taucht am Hbf von selbst *Von* = `Stade` auf.
-- Die Daten wachsen ab dem ersten Start. Es gibt keine Historie vor der Inbetriebnahme.
+- Es gibt keine Historie vor der Inbetriebnahme, die Daten wachsen ab dem ersten Start.
+
+### Strecken
+
+Stand 19.10.2026 (live gemessen). Messpunkt ist immer die Abfahrt an der genannten Haltestelle. Ankunftstafeln sind für den Account gesperrt, die Verspätung am Streckenende lässt sich also nicht direkt messen.
+
+| Strecke (Tag `route`) | Messpunkt | Hinweis |
+| --- | --- | --- |
+| S5 Stade → Neugraben | Abfahrt Stade | am Start meist nahe 0 |
+| S5 Neugraben → Stade | Abfahrt Neugraben Richtung Stade/Buxtehude | enthält näherungsweise die Verspätung, mit der der Zug aus Stade ankam (Wendezeit nicht herausgerechnet) |
+| S5 Neugraben → Elbgaustraße | Abfahrt Neugraben und Hauptbahnhof | die S5 fährt geteilt, es gibt keinen durchgehenden Zug Stade–Hbf |
+| S5 Elbgaustraße → Neugraben | Abfahrt Hauptbahnhof Richtung Neugraben | |
+| S7 Bergedorf → Aumühle | Abfahrt Bergedorf | die S7 fährt derzeit nur Bergedorf–Aumühle |
+| S7 Bergedorf → Hamburg | Abfahrt Bergedorf, Linie `S7` (Zug) und `S7-SEV` (Ersatzbus nach Berliner Tor) | Züge Richtung Hamburg gibt es derzeit nicht, der Ersatzbus trägt dieselbe Strecke |
+| X30 Bergedorf → Harburg | Abfahrt Bergedorf | |
+| X30 Harburg → Bergedorf | Abfahrt Harburg Rathaus | |
+
+Ändert sich der Fahrplan (Ende der Bauarbeiten), taucht der Verkehr an den Messpunkten unter einem anderen `direction`-Wert auf. Der Collector schreibt dann unter dem Tag `route` den Fallback `<Linie> <Station> → <Richtung>` und warnt einmal im Log. Dann `ROUTES` anpassen. Bei vollen Abfragelisten (`total >= max_list`) warnt er ebenfalls.
 
 ## Live-Karte
 
@@ -91,10 +107,11 @@ Die GTI-Daten sind für kostenlose Fahrgastinformation freigegeben, ein Link zu 
 
 Geprüft:
 
-- 44 Unit- und Integrationstests (HMAC-Signatur gegen RFC-2202-Vektor, Umlaute im Body, gzip, Teilausfälle, Influx-Fehler, CLI).
+- 58 Unit- und Integrationstests (HMAC-Signatur gegen RFC-2202-Vektor, Umlaute im Body, gzip, Teilausfälle, Influx-Fehler, CLI).
 - Line Protocol und Schreibpfad gegen eine echte InfluxDB 2.9.1, Idempotenz durch Überschreiben.
-- Alle Dashboard-Abfragen gegen echtes Grafana 13.2.2 und InfluxDB, Ergebnisse stimmen mit einer Python-Gegenrechnung überein (Schwellen 3 und 6 Minuten, mehrere Filter).
-- Das Dashboard ist im echten Grafana (13.2.2, 19.10.2026) importiert. Alle 11 Panels und 4 Variablen laufen dort ohne Fehler gegen die Datenquelle `HVV InfluxDB` mit dem Lese-Token, das aber nur mit den ersten 12 Testpunkten.
+- Alle Dashboard-Abfragen gegen echtes Grafana 13.2.2 und InfluxDB, Ergebnisse stimmen mit einer Handrechnung überein (Schwellen 3 und 6 Minuten, mehrere Filter, Strecken mit und ohne Echtzeitwerte). Die Testdaten wurden danach wieder gelöscht.
+- Trockenlauf (`collect --dry-run --once`) gegen die echte GTI am 19.10.2026: alle 9 Streckennamen kommen vor, keine unzugeordneten Richtungen.
+- Das Dashboard ist im echten Grafana (13.2.2, 19.10.2026) importiert. Alle 12 Panels und 9 Variablen laufen dort ohne Fehler gegen die Datenquelle `HVV InfluxDB` mit dem Lese-Token. Im Bucket liegen aber nur 12 alte Testpunkte ohne `route`-Tag, solange der Collector nicht läuft, sind die Panels leer.
 
 Nicht geprüft:
 

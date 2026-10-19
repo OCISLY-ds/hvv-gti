@@ -42,7 +42,7 @@ def cmd_departures(cfg: Config, args: argparse.Namespace) -> int:
         max_list=args.max_list,
         max_time_offset=args.offset,
         departure=not args.arrivals,
-        service_types=list(cfg.service_types) or None,
+        service_types=[x for x in args.types.split(",") if x] or None,
     )
     for dep in response.get("departures", []):
         service = dep.get("line", {})
@@ -110,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--station-id")
     p.add_argument("--arrivals", action="store_true")
     p.add_argument("--line")
+    p.add_argument("--types", default="", help="Verkehrsmittel, z.B. SBAHN,BUS (leer = alle)")
     p.add_argument("--max-list", type=int, default=20)
     p.add_argument("--offset", type=int, default=60)
     p.set_defaults(func=cmd_departures)
