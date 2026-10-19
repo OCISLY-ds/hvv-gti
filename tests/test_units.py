@@ -45,7 +45,7 @@ class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         cfg = Config.from_env({})
         self.assertEqual(cfg.line, "S5")
-        self.assertEqual(cfg.stations, (("Stade", None), ("Hauptbahnhof", None)))
+        self.assertEqual(cfg.stations, (("Stade", None), ("Neugraben", None), ("Hauptbahnhof", None)))
         self.assertEqual(cfg.service_types, ("SBAHN",))
         self.assertTrue(cfg.collect_arrivals)
 

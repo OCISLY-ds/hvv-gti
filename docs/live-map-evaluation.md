@@ -1,7 +1,7 @@
 # Live-Karte mit Bussen und Bahnen: Machbarkeit
 
 Stand: Oktober 2026. Grundlage sind die GTI-Dokumentation und OpenAPI-Spezifikation (Version 63), die Open-Source-Integration von Home Assistant für HVV und das Projekt *HVVMap*.
-**Nicht belegt:** Es gab keinen API-Zugang, daher wurde kein einziger echter `getVehicleMap`-Aufruf ausgeführt. Alles, was von echten Antworten abhängt, ist unten als offen markiert und lässt sich mit `python -m hvv_gti probe-vehicles` in zwei Minuten klären.
+Ein echter `getVehicleMap`-Aufruf wurde am 19.10.2026 gegen den GTI-Account des Projektinhabers gemessen (Abschnitt „Messung“). Was daraus noch nicht folgt, ist unten als offen markiert.
 
 ## Kurzfazit
 
@@ -11,7 +11,7 @@ Stand: Oktober 2026. Grundlage sind die GTI-Dokumentation und OpenAPI-Spezifikat
 | Genauigkeit | Auf Minutenniveau. Zwischen zwei Halten wird gleichmäßige Fahrt angenommen; bei Störungen oder Halt auf freier Strecke liegt die Anzeige daneben. Für Busse im Stadtverkehr ist das gröber als für die S-Bahn. |
 | Rate-Limit | Im Schnitt mehr als 1 Aufruf pro Sekunde führt zu einer vorübergehenden Sperre. Eine Karte mit einem Abruf alle 30 bis 60 s liegt weit darunter. |
 | In Grafana? | Mit dem Geomap-Panel ja, als „alle 15 bis 30 s neu gezeichnete Punkte“. Flüssige Bewegung ist dort nicht möglich. |
-| Empfehlung | Zuerst `probe-vehicles` messen. Danach Variante A (nur S-Bahn oder ausgewählte Linien in Grafana). Eine eigene Webkarte (B) nur, wenn flüssige Bewegung oder das ganze Netz gewünscht ist. |
+| Empfehlung | Variante A (nur S-Bahn oder ausgewählte Linien in Grafana); die Messung (siehe unten) spricht nicht dagegen. Eine eigene Webkarte (B) nur, wenn flüssige Bewegung oder das ganze Netz gewünscht ist. |
 
 ## Was die API liefert
 
@@ -20,18 +20,32 @@ Stand: Oktober 2026. Grundlage sind die GTI-Dokumentation und OpenAPI-Spezifikat
 - `getTrackCoordinates`: liefert die Polylinien (`tracks`) zu Haltepunkt-Paaren. Sie sind statisch und lassen sich dauerhaft zwischenspeichern.
 - Mit `withoutCoords=true` bleibt die Antwort klein; die Polylinien holt man einmalig separat. Das Projekt HVVMap hat `getVehicleMap` nach eigener Aussage wegen der Anzahl der Requests wieder entfernt und kommt mit Minutengenauigkeit aus. Das passt zu der Einschätzung hier.
 
-### Offene Punkte (mit `probe-vehicles` prüfen)
+### Messung (19.10.2026, 13:10 Uhr)
 
-1. **Größe und Latenz** der Antwort für ganz Hamburg und für den Zuschnitt auf S-Bahn. Ausgegeben werden Bytes pro Fahrt und Gesamtgröße.
-2. **Enthalten `startDateTime`/`endDateTime` die Verspätung schon, oder muss `realtimeDelay` addiert werden?** Der Vergleich mit `departures` für dieselbe Fahrt klärt das.
-3. **Anteil der Fahrten mit `realtime=true`**, besonders bei Bussen.
-4. Ob das **GTI-Konto** `getVehicleMap` überhaupt freischaltet (Rechte hängen am Zugang).
+`python -m hvv_gti probe-vehicles --types S_BAHN --line S5`, Bounding-Box Großraum Hamburg, 2-Minuten-Fenster:
+
+| Wert | Messung |
+| --- | --- |
+| Freischaltung | `getVehicleMap` funktioniert mit dem Account (Ankunftstafeln dagegen nicht, HTTP 403) |
+| Latenz | 3,2 s (alle GTI-Aufrufe brauchen etwa 3 s) |
+| Größe | 48 KiB entpackt, rund 830 Byte pro Fahrt |
+| Umfang | 59 S-Bahn-Fahrten mit 93 Segmenten, alle mit Echtzeit (`realtime=true`) |
+| `realtimeDelay` | Median 0 s, Maximum 10 s (zu ruhige Stichprobe, um mehr zu sagen) |
+| Linie S5 | 12 Fahrten gleichzeitig, jeweils Ziel Neugraben oder Elbgaustraße |
+
+Folgerungen: Die Antwortgröße ist unkritisch (bei 30 s Abstand rund 140 MB Transfer pro Tag). Die Latenz heißt, dass ein Abruf ein paar Sekunden dauert und nicht mehr als alle 15 bis 30 s sinnvoll ist. Die Standard-Bounding-Box endet östlich von Stade; für den Stade-Zweig muss sie nach Westen erweitert werden (`--bbox 9.40,53.35,10.35,53.75`).
+
+### Noch offen
+
+1. **Enthalten `startDateTime`/`endDateTime` die Verspätung schon, oder muss `realtimeDelay` addiert werden?** Die Stichprobe hatte nur Verspätungen bis 10 s. Zum Klären bei einem Zug mit mehreren Minuten Verspätung (siehe Dashboard) `probe-vehicles --line S5` wiederholen und die Segmentzeiten mit der Abfahrtstafel vergleichen.
+2. **Echtzeit-Anteil bei Bussen** (die S-Bahn ist zu 100 % echtzeitfähig, Busse nicht zwingend): `probe-vehicles --types METROBUS`.
+3. **Verhalten bei Störungen**, wenn Fahrten ausfallen oder Echtzeit abreißt.
 
 ## Positionsberechnung
 
 Für jede Fahrt zum Zeitpunkt *t*:
 
-1. Segment finden mit `start + delay <= t <= end + delay` (siehe offener Punkt 2).
+1. Segment finden mit `start + delay <= t <= end + delay` (siehe „Noch offen“, Punkt 1).
 2. Anteil `f = (t - start) / (end - start)` bilden.
 3. Entlang der Polylinie des Segments den Punkt bei `f * Länge` bestimmen (Haversine oder lokale Ebene).
 4. Zwischen zwei Segmenten (Halt am Bahnsteig) die Position des Halts verwenden.
@@ -71,7 +85,8 @@ Mehrere Browser-Tabs dürfen nie je einen eigenen API-Abruf auslösen. Der Abruf
 
 ## Risiken
 
-- **Baustellen 2026:** Wegen der Arbeiten am Harburger Tunnel weichen Fahrpläne und Ersatzverkehr ab. Schienenersatzverkehr taucht nicht zwingend als Linie `S5` auf; Lücken in den Pünktlichkeitsdaten sind dann kein Fehler im Collector.
+- **Baustellen 2026:** Am 19.10.2026 fährt die S5 geteilt (Stade–Neugraben und Neugraben–Elbgaustraße über Hbf, live gemessen). Es gibt keinen durchgehenden Zug Stade–Hbf; Pünktlichkeit und Karte müssen beide Zweige betrachten, und Fahrplanänderungen können die Tags (`direction`/`origin`) verschieben.
+- **Freischaltung:** Der vorhandene GTI-Account darf keine Ankunftstafeln abfragen (HTTP 403). `getVehicleMap` kann ebenfalls gesperrt sein; das zeigt erst `probe-vehicles`.
 - Positionsfehler bei Störungen (siehe oben), Busse oft zu ungenau, um daran „wo ist mein Bus“ zu entscheiden.
 - Speicher und RAM des Raspberry Pi (1,8 GB): Karte A mit Retention begrenzen, eine eigene Webkarte (B) nur als schlanken Dienst betreiben.
 
@@ -81,11 +96,11 @@ Mehrere Browser-Tabs dürfen nie je einen eigenen API-Abruf auslösen. Der Abruf
 # S-Bahn im Großraum Hamburg, 2-Minuten-Fenster, Linie S5 auflisten
 python -m hvv_gti probe-vehicles --types S_BAHN --line S5
 
-# gesamtes Netz (Größe und Latenz einschätzen)
+# gesamtes Netz inkl. Busse (Größe und Latenz einschätzen)
 python -m hvv_gti probe-vehicles
 
 # nur Fahrplan statt Echtzeit (Vergleich)
 python -m hvv_gti probe-vehicles --types S_BAHN --schedule
 ```
 
-Entscheidungshilfe: Liegt die Antwort für `S_BAHN` unter etwa 200 KiB und unter 3 s Latenz, ist Variante A ohne weitere Optimierung machbar. Ist sie deutlich größer, wird `withoutCoords=true` (Standard) geprüft und das Gebiet auf eine Bounding-Box entlang der S5 eingeschränkt.
+Entscheidungshilfe: Die Messung (48 KiB, 59 Fahrten) liegt weit unter den Schwellen: Variante A ist ohne weitere Optimierung machbar. Für Busse gilt Entsprechendes erst nach einer eigenen Messung (`--types METROBUS`), weil dort deutlich mehr Fahrzeuge anfallen.

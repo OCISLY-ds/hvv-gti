@@ -3,7 +3,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from .client import GtiAuthError, GtiClient, GtiError
+from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .config import Config
 from .influx import InfluxError, InfluxWriter, line_protocol
 
@@ -65,13 +65,26 @@ def parse_events(response: dict, reference: datetime, stop: Stop, kind: str, lin
     return lines
 
 
-def collect_once(client: GtiClient, stops: list[Stop], cfg: Config, now: datetime | None = None) -> list[str]:
+def collect_once(
+    client: GtiClient,
+    stops: list[Stop],
+    cfg: Config,
+    now: datetime | None = None,
+    denied: set[str] | None = None,
+) -> list[str]:
+    """`denied` sammelt Arten (departure/arrival), die der Account nicht abfragen darf; sie werden danach uebersprungen."""
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(second=0, microsecond=0)
+    denied = denied if denied is not None else set()
     kinds = [("departure", True)] + ([("arrival", False)] if cfg.collect_arrivals else [])
+    if all(kind in denied for kind, _ in kinds):
+        raise GtiPermissionError("Der Account darf keine der konfigurierten Abfragen ausfuehren")
     lines: list[str] = []
     errors: list[GtiError] = []
+    ok = 0
     for stop in stops:
         for kind, is_departure in kinds:
+            if kind in denied:
+                continue
             try:
                 response = client.departure_list(
                     stop.sd_name,
@@ -83,17 +96,24 @@ def collect_once(client: GtiClient, stops: list[Stop], cfg: Config, now: datetim
                 )
             except GtiAuthError:
                 raise
+            except GtiPermissionError as exc:
+                hint = " (HVV_COLLECT_ARRIVALS=false setzen, um die Meldung zu vermeiden)" if kind == "arrival" else ""
+                log.warning("Account darf '%s' nicht abfragen, wird uebersprungen%s: %s", kind, hint, exc)
+                denied.add(kind)
+                errors.append(exc)
+                continue
             except GtiError as exc:
                 log.error("%s %s: %s", stop.label, kind, exc)
                 errors.append(exc)
                 continue
+            ok += 1
             events = parse_events(response, reference, stop, kind, cfg.line)
             total = len(response.get("departures", []))
             log.info("%s %s: %d Eintraege, %d davon Linie %s", stop.label, kind, total, len(events), cfg.line)
             if total and not events:
                 log.warning("%s %s: keine Fahrten der Linie %s in der Antwort", stop.label, kind, cfg.line)
             lines.extend(events)
-    if errors and len(errors) == len(stops) * len(kinds):
+    if errors and not ok:
         raise errors[-1]
     return lines
 
@@ -107,12 +127,13 @@ def run(
     once: bool = False,
 ) -> int:
     stops: list[Stop] | None = None
+    denied: set[str] = set()
     failures = 0
     while not stop_event.is_set():
         try:
             if stops is None:
                 stops = [resolve_station(client, name, sid) for name, sid in cfg.stations]
-            lines = collect_once(client, stops, cfg)
+            lines = collect_once(client, stops, cfg, denied=denied)
             if writer is None:
                 print("\n".join(lines), flush=True)
             else:

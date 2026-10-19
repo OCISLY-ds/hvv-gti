@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 
 from hvv_gti import collector
-from hvv_gti.client import GtiAuthError, GtiClient, GtiError
+from hvv_gti.client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from hvv_gti.config import Config
 from hvv_gti.influx import InfluxError, InfluxWriter
 
@@ -31,6 +31,23 @@ def gti_responses(departures):
         "checkName": {"returnCode": "OK", "results": [STADE, HBF, {"id": "x", "type": "ADDRESS", "name": "Stade"}]},
         "departureList": {"returnCode": "OK", "departures": departures},
     }
+
+
+ARRIVAL_DENIED = (
+    403,
+    {"returnCode": "ERROR_TEXT", "errorText": "A technical problem occured while processing your request.", "errorDevInfo": "ArrivalList not allowed for user"},
+)
+
+
+def departures_only(departures):
+    """Wie der echte Account: Abfahrten ja, Ankuenfte (departure=false) 403."""
+
+    def respond(body):
+        if body.get("departure") is False:
+            return ARRIVAL_DENIED
+        return {"returnCode": "OK", "departures": departures}
+
+    return respond
 
 
 def client_for(gti: FakeGti, **kw) -> GtiClient:
@@ -62,6 +79,13 @@ class ClientTest(unittest.TestCase):
         with FakeGti(responses=gti_responses([departure("S5", 3, 60)]), gzip_responses=True) as gti:
             data = client_for(gti).departure_list(STADE, REFERENCE)
         self.assertEqual(len(data["departures"]), 1)
+
+    def test_missing_permission_is_not_an_auth_error(self):
+        with FakeGti(responses={"departureList": departures_only([])}) as gti:
+            with self.assertRaises(GtiPermissionError) as ctx:
+                client_for(gti).departure_list(STADE, REFERENCE, departure=False)
+        self.assertNotIsInstance(ctx.exception, GtiAuthError)
+        self.assertEqual(ctx.exception.code, "403")
 
     def test_return_code_error(self):
         with FakeGti(responses={"init": {"returnCode": "ERROR_COMM", "errorText": "kaputt"}}) as gti:
@@ -187,6 +211,26 @@ class CollectTest(unittest.TestCase):
             with self.assertRaises(GtiError):
                 collector.collect_once(client_for(gti), [collector.Stop("Stade", STADE)], self.cfg(), now=NOW)
 
+    def test_denied_arrivals_are_skipped_and_remembered(self):
+        stops = [collector.Stop("Stade", STADE), collector.Stop("Hauptbahnhof", HBF)]
+        with FakeGti(responses={"departureList": departures_only([departure("S5", 2, 60)])}) as gti:
+            denied: set[str] = set()
+            client = client_for(gti)
+            first = collector.collect_once(client, stops, self.cfg(), now=NOW, denied=denied)
+            requests_after_first = len(gti.requests)
+            second = collector.collect_once(client, stops, self.cfg(), now=NOW, denied=denied)
+        self.assertEqual(len(first), 2)  # nur die beiden Abfahrten
+        self.assertTrue(all("kind=departure" in l for l in first + second))
+        self.assertEqual(denied, {"arrival"})
+        # Zyklus 1: Stade dep + Stade arr (403) + Hbf dep (Ankunft dort uebersprungen), Zyklus 2: nur 2 Abfahrten
+        self.assertEqual(requests_after_first, 3)
+        self.assertEqual(len(gti.requests) - requests_after_first, 2)
+
+    def test_everything_denied_raises(self):
+        with FakeGti(responses={"departureList": (403, ARRIVAL_DENIED[1])}) as gti:
+            with self.assertRaises(GtiPermissionError):
+                collector.collect_once(client_for(gti), [collector.Stop("Stade", STADE)], self.cfg(), now=NOW)
+
     def test_auth_error_propagates(self):
         with FakeGti() as gti:
             bad = GtiClient("tester", "falsch", base_url=gti.url, min_interval=0)
@@ -207,7 +251,7 @@ class RunTest(unittest.TestCase):
         self.assertIn("bucket=hvv", path)
         self.assertIn("precision=ns", path)
         self.assertEqual(auth, "Token tok")
-        self.assertEqual(len(body.splitlines()), 4)
+        self.assertEqual(len(body.splitlines()), 6)
         self.assertIn("hvv_stop_event,", body)
 
     def test_run_once_reports_failure_exit_code(self):

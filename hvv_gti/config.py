@@ -45,7 +45,7 @@ class Config:
     api_version: int = 63
     min_request_interval: float = 1.2
     line: str = "S5"
-    stations: tuple[tuple[str, str | None], ...] = (("Stade", None), ("Hauptbahnhof", None))
+    stations: tuple[tuple[str, str | None], ...] = (("Stade", None), ("Neugraben", None), ("Hauptbahnhof", None))
     service_types: tuple[str, ...] = ("SBAHN",)
     poll_interval: float = 60.0
     max_list: int = 40

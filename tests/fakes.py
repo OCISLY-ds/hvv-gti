@@ -46,7 +46,10 @@ class _GtiHandler(BaseHTTPRequestHandler):
         response = owner.responses.get(method, {"returnCode": "OK"})
         if callable(response):
             response = response(json.loads(body))
-        self._send(200, json.dumps(response, ensure_ascii=False).encode("utf-8"), "application/json", owner.gzip)
+        status = 200
+        if isinstance(response, tuple):  # (HTTP-Status, Antwort)
+            status, response = response
+        self._send(status, json.dumps(response, ensure_ascii=False).encode("utf-8"), "application/json", owner.gzip)
 
     def _send(self, status, payload, content_type, compress=False):
         if compress:

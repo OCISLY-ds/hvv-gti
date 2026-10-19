@@ -23,6 +23,10 @@ class GtiAuthError(GtiError):
     pass
 
 
+class GtiPermissionError(GtiError):
+    """Zugang gueltig, aber die Methode ist fuer den Account nicht freigeschaltet."""
+
+
 def sign(password: str, body: bytes) -> str:
     digest = hmac.new(password.encode("utf-8"), body, hashlib.sha1).digest()
     return base64.b64encode(digest).decode("ascii")
@@ -89,7 +93,10 @@ class GtiClient:
                     raw = gzip.decompress(raw)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:300]
-            cls = GtiAuthError if exc.code in (401, 403) else GtiError
+            if exc.code == 403 and "not allowed for user" in detail:
+                cls = GtiPermissionError
+            else:
+                cls = GtiAuthError if exc.code in (401, 403) else GtiError
             raise cls(f"HTTP {exc.code} bei {path}: {detail}", code=str(exc.code)) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise GtiError(f"Verbindungsfehler bei {path}: {exc}") from exc
