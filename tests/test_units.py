@@ -48,12 +48,12 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual([name for name, _ in cfg.stations], ["Stade", "Neugraben", "Hauptbahnhof"])
         self.assertTrue(all(station_id.startswith("Master:") for _, station_id in STATIONS))
         self.assertEqual(cfg.service_types, ("SBAHN",))
-        self.assertTrue(cfg.collect_arrivals)
+        self.assertFalse(cfg.collect_arrivals)
 
     def test_overrides_and_bool(self):
         cfg = Config.from_env(
             {
-                "HVV_COLLECT_ARRIVALS": "false",
+                "HVV_COLLECT_ARRIVALS": "true",  # wird ignoriert
                 "HVV_POLL_INTERVAL": "30",
                 "HVV_SERVICE_TYPES": "SBAHN, UBAHN",
                 "INFLUX_URL": "http://x:1/",

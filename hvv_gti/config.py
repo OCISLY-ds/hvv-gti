@@ -22,10 +22,6 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value)
 
 
-def _bool(value: str) -> bool:
-    return value.strip().lower() in ("1", "true", "yes", "on")
-
-
 # Stand 19.10.2026 faehrt die S5 geteilt (Stade-Neugraben, Neugraben-Elbgaustrasse ueber Hbf).
 # Die Label sind die Werte des Tags `station` in InfluxDB und im Dashboard.
 STATIONS: tuple[tuple[str, str], ...] = (
@@ -48,7 +44,8 @@ class Config:
     poll_interval: float = 60.0
     max_list: int = 40
     max_time_offset: int = 30
-    collect_arrivals: bool = True
+    # Der GTI-Account darf keine Ankunftstafeln abfragen (HTTP 403 ArrivalList not allowed for user).
+    collect_arrivals: bool = False
     influx_url: str = "http://localhost:8086"
     influx_org: str = ""
     influx_bucket: str = "hvv"
@@ -69,7 +66,6 @@ class Config:
             poll_interval=float(e.get("HVV_POLL_INTERVAL", d.poll_interval)),
             max_list=int(e.get("HVV_MAX_LIST", d.max_list)),
             max_time_offset=int(e.get("HVV_MAX_TIME_OFFSET", d.max_time_offset)),
-            collect_arrivals=_bool(e.get("HVV_COLLECT_ARRIVALS", str(d.collect_arrivals))),
             influx_url=e.get("INFLUX_URL", d.influx_url).rstrip("/"),
             influx_org=e.get("INFLUX_ORG", d.influx_org),
             influx_bucket=e.get("INFLUX_BUCKET", d.influx_bucket),

@@ -160,7 +160,7 @@ class ParseEventsTest(unittest.TestCase):
 
 class CollectTest(unittest.TestCase):
     def cfg(self, **kw):
-        return Config(stations=(("Stade", None), ("Hauptbahnhof", None)), **kw)
+        return Config(stations=(("Stade", None), ("Hauptbahnhof", None)), **{"collect_arrivals": True, **kw})
 
     def test_collect_once_all_stations_and_kinds(self):
         responses = gti_responses([departure("S5", 2, 60), departure("S3", 3, 0)])
@@ -242,7 +242,7 @@ class RunTest(unittest.TestCase):
     def test_run_once_writes_to_influx(self):
         responses = gti_responses([departure("S5", 2, 90)])
         with FakeGti(responses=responses) as gti, FakeInflux() as influx:
-            cfg = Config(poll_interval=0.01)
+            cfg = Config(poll_interval=0.01, collect_arrivals=True)
             writer = InfluxWriter(influx.url, "Bergedorf", "hvv", "tok")
             code = collector.run(cfg, client_for(gti), writer, threading.Event(), once=True)
         self.assertEqual(code, 0)

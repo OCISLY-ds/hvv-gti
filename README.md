@@ -44,7 +44,7 @@ python3 -m hvv_gti collect --dry-run --once           # gibt nur Line Protocol a
 
 Zum ersten echten Lauf (Stationsauflösung, Linienname `S5` und Tags `direction`/`origin` sind damit am 19.10.2026 bestätigt):
 
-- Ankünfte: Der Account des Projektinhabers darf keine Ankunftstafeln abfragen (HTTP 403, `ArrivalList not allowed for user`). Deshalb ist `HVV_COLLECT_ARRIVALS=false` der Standard, und der Collector überspringt Ankünfte bei einem 403 von selbst. Es zählen nur Abfahrten.
+- Ankünfte: Der Account des Projektinhabers darf keine Ankunftstafeln abfragen (HTTP 403, `ArrivalList not allowed for user`). Deshalb ist `collect_arrivals` in `hvv_gti/config.py` fest auf `False` gesetzt (nicht in der `.env`), und der Collector überspringt Ankünfte bei einem 403 ohnehin von selbst. Es zählen nur Abfahrten.
 
 ### 4. Collector starten
 

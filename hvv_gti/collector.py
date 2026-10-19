@@ -97,8 +97,7 @@ def collect_once(
             except GtiAuthError:
                 raise
             except GtiPermissionError as exc:
-                hint = " (HVV_COLLECT_ARRIVALS=false setzen, um die Meldung zu vermeiden)" if kind == "arrival" else ""
-                log.warning("Account darf '%s' nicht abfragen, wird uebersprungen%s: %s", kind, hint, exc)
+                log.warning("Account darf '%s' nicht abfragen, wird uebersprungen: %s", kind, exc)
                 denied.add(kind)
                 errors.append(exc)
                 continue

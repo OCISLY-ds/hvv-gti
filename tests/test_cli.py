@@ -81,8 +81,8 @@ class CliTest(unittest.TestCase):
             code, out, _ = run_cli(gti, "collect", "--dry-run", "--once")
         self.assertEqual(code, 0)
         lines = out.strip().splitlines()
-        self.assertEqual(len(lines), 6)
-        self.assertTrue(all(l.startswith("hvv_stop_event,") for l in lines))
+        self.assertEqual(len(lines), 3)  # 3 Haltestellen, nur Abfahrten
+        self.assertTrue(all(l.startswith("hvv_stop_event,") and "kind=departure" in l for l in lines))
 
     def test_collect_requires_influx_settings(self):
         with FakeGti() as gti:
