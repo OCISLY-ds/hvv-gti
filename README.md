@@ -67,7 +67,7 @@ Der Container läuft im Host-Netz (`INFLUX_URL=http://localhost:8086`, der Port 
 - Alle 60 s wird `departureList` je Haltestelle abgefragt (Abfahrten, optional auch Ankünfte).
 - Ein Ereignis ist eine Zeile `hvv_stop_event`: Tags `line`, `station`, `kind` (`departure`/`arrival`), `direction`, `origin`; Felder `delay_s`, `cancelled`, `extra`, `service_id`. Der **Zeitstempel ist die planmäßige Zeit**. Dasselbe Ereignis wird bei jeder Abfrage erneut geschrieben und überschreibt sich damit: gespeichert bleibt **die zuletzt gemeldete Verspätung vor der Fahrt**.
 - **Pünktlich** heißt Verspätung unter der Schwelle (Standard 3 Minuten, im Dashboard wählbar). Ausfälle zählen nicht als verspätet, sondern werden getrennt als Ausfallquote ausgewiesen.
-- **Stade → Hbf:** Stand 19.10.2026 fährt die S5 nicht durchgehend, sondern geteilt (live gemessen): Stade–Neugraben und Neugraben–Elbgaustraße über den Hbf, Zugwechsel in Neugraben. Deshalb liegt Neugraben in `HVV_STATIONS`. Dashboard-Filter:
+- **Stade → Hbf:** Stand 19.10.2026 fährt die S5 nicht durchgehend, sondern geteilt (live gemessen): Stade–Neugraben und Neugraben–Elbgaustraße über den Hbf, Zugwechsel in Neugraben. Deshalb liegt Neugraben bei den Haltestellen. Diese stehen fest im Code (`STATIONS` in `hvv_gti/config.py`, mit GTI-IDs), nicht in der `.env`. Dashboard-Filter:
   - Stade-Zweig: *Station* = `Stade` (Abfahrt nach Neugraben, am Start meist nahe 0) und *Station* = `Neugraben`, *Richtung* = `Stade`.
   - Hbf-Zweig: *Station* = `Hauptbahnhof`, *Richtung* = `Elbgaustraße`: Abfahrt der Züge aus Neugraben am Hbf, also Ankunftsverspätung plus Haltezeit.
   - Fährt die S5 wieder durchgehend, taucht am Hbf von selbst *Von* = `Stade` auf.
@@ -95,7 +95,7 @@ Geprüft:
 
 Nicht geprüft:
 
-- Echte GTI-Antworten über `check-name` und eine Abfahrtstafel hinaus: Werte von `direction`/`origin` und `getVehicleMap` (Freischaltung, Antwortgröße) sind offen. Ankünfte sind mit dem vorhandenen Account nicht erlaubt.
+- Echte GTI-Antworten über `check-name` und eine Abfahrtstafel hinaus: Ob die Segmentzeiten von `getVehicleMap` die Verspätung schon enthalten, ist offen (siehe `docs/live-map-evaluation.md`). Ankünfte sind mit dem vorhandenen Account nicht erlaubt.
 - Darstellung der Panels im Browser (kein Browser vorhanden). Importiert und abgefragt wurde über die Grafana-API, die Variablen mit „All“ bitte einmal im UI ansehen.
 
 ## Entwicklung

@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from hvv_gti.client import gti_time, sign
-from hvv_gti.config import Config, ConfigError, load_dotenv, parse_stations
+from hvv_gti.config import STATIONS, Config, ConfigError, load_dotenv
 from hvv_gti.influx import line_protocol
 
 
@@ -45,27 +45,22 @@ class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         cfg = Config.from_env({})
         self.assertEqual(cfg.line, "S5")
-        self.assertEqual(cfg.stations, (("Stade", None), ("Neugraben", None), ("Hauptbahnhof", None)))
+        self.assertEqual([name for name, _ in cfg.stations], ["Stade", "Neugraben", "Hauptbahnhof"])
+        self.assertTrue(all(station_id.startswith("Master:") for _, station_id in STATIONS))
         self.assertEqual(cfg.service_types, ("SBAHN",))
         self.assertTrue(cfg.collect_arrivals)
-
-    def test_parse_stations(self):
-        self.assertEqual(
-            parse_stations(" Stade ; Hauptbahnhof=Master:9910 ;; "),
-            [("Stade", None), ("Hauptbahnhof", "Master:9910")],
-        )
 
     def test_overrides_and_bool(self):
         cfg = Config.from_env(
             {
-                "HVV_STATIONS": "A=1;B",
                 "HVV_COLLECT_ARRIVALS": "false",
                 "HVV_POLL_INTERVAL": "30",
                 "HVV_SERVICE_TYPES": "SBAHN, UBAHN",
                 "INFLUX_URL": "http://x:1/",
+                "HVV_STATIONS": "A;B",
             }
         )
-        self.assertEqual(cfg.stations, (("A", "1"), ("B", None)))
+        self.assertEqual(cfg.stations, STATIONS)  # nicht per Umgebung aenderbar
         self.assertFalse(cfg.collect_arrivals)
         self.assertEqual(cfg.poll_interval, 30.0)
         self.assertEqual(cfg.service_types, ("SBAHN", "UBAHN"))

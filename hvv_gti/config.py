@@ -22,19 +22,17 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value)
 
 
-def parse_stations(raw: str) -> list[tuple[str, str | None]]:
-    stations = []
-    for part in raw.split(";"):
-        part = part.strip()
-        if not part:
-            continue
-        name, sep, station_id = part.partition("=")
-        stations.append((name.strip(), station_id.strip() if sep and station_id.strip() else None))
-    return stations
-
-
 def _bool(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Stand 19.10.2026 faehrt die S5 geteilt (Stade-Neugraben, Neugraben-Elbgaustrasse ueber Hbf).
+# Die Label sind die Werte des Tags `station` in InfluxDB und im Dashboard.
+STATIONS: tuple[tuple[str, str], ...] = (
+    ("Stade", "Master:8000089"),
+    ("Neugraben", "Master:41951"),
+    ("Hauptbahnhof", "Master:9910950"),
+)
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,7 @@ class Config:
     api_version: int = 63
     min_request_interval: float = 1.2
     line: str = "S5"
-    stations: tuple[tuple[str, str | None], ...] = (("Stade", None), ("Neugraben", None), ("Hauptbahnhof", None))
+    stations: tuple[tuple[str, str | None], ...] = STATIONS
     service_types: tuple[str, ...] = ("SBAHN",)
     poll_interval: float = 60.0
     max_list: int = 40
@@ -67,7 +65,6 @@ class Config:
             api_version=int(e.get("HVV_API_VERSION", d.api_version)),
             min_request_interval=float(e.get("HVV_MIN_REQUEST_INTERVAL", d.min_request_interval)),
             line=e.get("HVV_LINE", d.line),
-            stations=tuple(parse_stations(e["HVV_STATIONS"])) if e.get("HVV_STATIONS") else d.stations,
             service_types=tuple(s.strip() for s in e.get("HVV_SERVICE_TYPES", "SBAHN").split(",") if s.strip()),
             poll_interval=float(e.get("HVV_POLL_INTERVAL", d.poll_interval)),
             max_list=int(e.get("HVV_MAX_LIST", d.max_list)),
