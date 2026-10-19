@@ -9,7 +9,7 @@ GTI (departureList) --> Collector (Docker) --> InfluxDB (Bucket hvv) --> Grafana
 - `hvv_gti/` – Python (nur Standardbibliothek plus `tzdata`): GTI-Client mit HMAC-Signatur, Collector, Influx-Writer, CLI
 - `grafana/dashboards/hvv-s5-puenktlichkeit.json` – Dashboard (Flux)
 - `docs/live-map-evaluation.md` – Machbarkeit der Live-Karte
-- `tests/` – 45 Tests gegen Fake-Server (`python3 -m unittest discover -s tests -t .`)
+- `tests/` – 44 Tests gegen Fake-Server (`python3 -m unittest discover -s tests -t .`)
 
 Branches: `main` = stabiler Stand, `dev` = Entwicklung.
 
@@ -59,8 +59,10 @@ Der Container läuft im Host-Netz (`INFLUX_URL=http://localhost:8086`, der Port 
 
 ### 5. Grafana
 
-1. Datenquelle **InfluxDB** hinzufügen: Query Language **Flux**, URL `http://influxdb:8086` (im iot-stack), Organisation `Bergedorf`, Default Bucket `hvv`, Lese-Token.
-2. Dashboards → Import → `grafana/dashboards/hvv-s5-puenktlichkeit.json`, die eben angelegte Datenquelle wählen (Variable *Datenquelle*).
+1. Datenquelle **InfluxDB** hinzufügen: Name `HVV InfluxDB` (UID `hvv-influx`, dann ist sie im Dashboard vorausgewählt), Query Language **Flux**, URL `http://influxdb:8086` (im iot-stack), Organisation `Bergedorf`, Default Bucket `hvv`, Lese-Token.
+2. Dashboards → Import → `grafana/dashboards/hvv-s5-puenktlichkeit.json`. Die Variable *Datenquelle* listet alle InfluxDB-Datenquellen, also bei Bedarf `HVV InfluxDB` wählen und nicht die des iot-stacks.
+
+Per API geht dasselbe mit einem Service-Account-Token (Rolle Admin): `POST /api/datasources` mit den Werten oben, danach `POST /api/dashboards/db` mit dem Dashboard-JSON. Der Token gehört nur in die git-ignorierte `.env` (`GRAFANA_URL`, `GRAFANA_TOKEN`, `INFLUX_READ_TOKEN`).
 
 ## Wie gemessen wird
 
@@ -89,9 +91,10 @@ Die GTI-Daten sind für kostenlose Fahrgastinformation freigegeben, ein Link zu 
 
 Geprüft:
 
-- 45 Unit- und Integrationstests (HMAC-Signatur gegen RFC-2202-Vektor, Umlaute im Body, gzip, Teilausfälle, Influx-Fehler, CLI).
+- 44 Unit- und Integrationstests (HMAC-Signatur gegen RFC-2202-Vektor, Umlaute im Body, gzip, Teilausfälle, Influx-Fehler, CLI).
 - Line Protocol und Schreibpfad gegen eine echte InfluxDB 2.9.1, Idempotenz durch Überschreiben.
 - Alle Dashboard-Abfragen gegen echtes Grafana 13.2.2 und InfluxDB, Ergebnisse stimmen mit einer Python-Gegenrechnung überein (Schwellen 3 und 6 Minuten, mehrere Filter).
+- Das Dashboard ist im echten Grafana (13.2.2, 19.10.2026) importiert. Alle 11 Panels und 4 Variablen laufen dort ohne Fehler gegen die Datenquelle `HVV InfluxDB` mit dem Lese-Token, das aber nur mit den ersten 12 Testpunkten.
 
 Nicht geprüft:
 

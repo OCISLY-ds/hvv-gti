@@ -25,7 +25,11 @@
         "type": "datasource",
         "query": "influxdb",
         "refresh": 1,
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "HVV InfluxDB",
+          "value": "hvv-influx"
+        },
         "options": [],
         "hide": 0
       },
