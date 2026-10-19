@@ -706,9 +706,9 @@
     },
     {
       "id": 7,
-      "type": "barchart",
+      "type": "trend",
       "title": "Pünktlichkeit nach Uhrzeit",
-      "description": "Pünktlichkeitsquote je Stunde der planmäßigen Abfahrt/Ankunft (Europe/Berlin).",
+      "description": "Pünktlichkeitsquote je Stunde der planmäßigen Abfahrt/Ankunft (Europe/Berlin). X-Achse: Stunde (0–23).",
       "datasource": {
         "type": "influxdb",
         "uid": "${ds}"
@@ -726,7 +726,7 @@
             "type": "influxdb",
             "uid": "${ds}"
           },
-          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.line, set: ${line:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({hour: date.hour(t: r._time), ok: if r.delay_s < ${threshold_min} * 60 then 100.0 else 0.0}))\n  |> group(columns: [\"hour\"])\n  |> mean(column: \"ok\")\n  |> group()\n  |> sort(columns: [\"hour\"])\n  |> map(fn: (r) => ({Uhrzeit: (if r.hour < 10 then \"0\" else \"\") + string(v: r.hour) + \":00\", \"Pünktlich\": r.ok}))\n"
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.line, set: ${line:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({hour: date.hour(t: r._time), ok: if r.delay_s < ${threshold_min} * 60 then 100.0 else 0.0}))\n  |> group(columns: [\"hour\"])\n  |> mean(column: \"ok\")\n  |> group()\n  |> sort(columns: [\"hour\"])\n  |> map(fn: (r) => ({Stunde: r.hour, \"Pünktlich\": r.ok}))\n"
         }
       ],
       "fieldConfig": {
@@ -739,30 +739,34 @@
             "fixedColor": "green"
           },
           "custom": {
-            "fillOpacity": 80
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "axisPlacement": "auto"
           }
         },
         "overrides": []
       },
       "options": {
-        "xField": "Uhrzeit",
-        "orientation": "vertical",
-        "showValue": "never",
+        "xField": "Stunde",
         "legend": {
+          "showLegend": false,
           "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+          "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       }
     },
     {
       "id": 8,
-      "type": "barchart",
+      "type": "trend",
       "title": "Verteilung der Verspätungen",
-      "description": "Anzahl der Fahrten je Verspätung in vollen Minuten (ohne Ausfälle, nur mit Echtzeitwert).",
+      "description": "Anzahl der Fahrten je Verspätung in vollen Minuten (ohne Ausfälle, nur mit Echtzeitwert). X-Achse: 15 = 15 Minuten und mehr.",
       "datasource": {
         "type": "influxdb",
         "uid": "${ds}"
@@ -780,7 +784,7 @@
             "type": "influxdb",
             "uid": "${ds}"
           },
-          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.line, set: ${line:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({bucket: if r.delay_s < 0 then 0 else if r.delay_s >= 900 then 15 else r.delay_s / 60, n: 1}))\n  |> group(columns: [\"bucket\"])\n  |> count(column: \"n\")\n  |> group()\n  |> sort(columns: [\"bucket\"])\n  |> map(fn: (r) => ({Verspätung: if r.bucket >= 15 then \"≥15 min\" else string(v: r.bucket) + \" min\", Fahrten: r.n}))\n"
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.line, set: ${line:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({bucket: if r.delay_s < 0 then 0 else if r.delay_s >= 900 then 15 else r.delay_s / 60, n: 1}))\n  |> group(columns: [\"bucket\"])\n  |> count(column: \"n\")\n  |> group()\n  |> sort(columns: [\"bucket\"])\n  |> map(fn: (r) => ({\"Verspätung (min)\": r.bucket, Fahrten: r.n}))\n"
         }
       ],
       "fieldConfig": {
@@ -792,22 +796,26 @@
             "fixedColor": "blue"
           },
           "custom": {
-            "fillOpacity": 80
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "axisPlacement": "auto"
           }
         },
         "overrides": []
       },
       "options": {
-        "xField": "Verspätung",
-        "orientation": "vertical",
-        "showValue": "auto",
+        "xField": "Verspätung (min)",
         "legend": {
+          "showLegend": false,
           "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+          "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       }
     },

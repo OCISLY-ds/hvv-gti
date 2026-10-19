@@ -1,6 +1,8 @@
 services:
   hvv-collector:
-    build: .
+    build:
+      context: .
+      network: host
     image: hvv-gti:latest
     container_name: hvv-collector
     restart: unless-stopped
