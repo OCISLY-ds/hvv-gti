@@ -41,17 +41,19 @@ html,body{margin:0;height:100%;background:#16202e;font:14px system-ui,sans-serif
 .popup .stop.passed{color:#9aa3b2}
 .popup .stop.passed .dl{color:#9aa3b2}
 .popup .stop.next{background:#e8f1ff;font-weight:600}
-#xtoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer}
-#xtoggle[hidden]{display:none}
-#btoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer}
+#cats{display:grid;grid-template-columns:1fr 1fr;column-gap:10px;margin-bottom:6px}
+.cat,#btoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer}
+.cat[hidden]{display:none}
+.cat .cn{color:#8a97ab;font-size:11px}
+#btoggle{margin-bottom:8px}
 
 /* ---- Touch und kleine Bildschirme ---- */
 html,body{-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 #map{touch-action:none}
 @media (pointer:coarse){
   #legend .row{padding:7px 6px}
-  #xtoggle,#btoggle{padding:6px 2px;margin-bottom:4px}
-  #xtoggle input,#btoggle input{width:20px;height:20px}
+  .cat,#btoggle{padding:6px 2px;margin-bottom:4px}
+  .cat input,#btoggle input{width:20px;height:20px}
   .maplibregl-ctrl-group button{width:40px;height:40px}
 }
 @media (max-width:700px){

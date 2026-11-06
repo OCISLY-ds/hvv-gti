@@ -62,7 +62,7 @@ def collect_xbus(client: GtiClient, cfg: Config, now: datetime | None = None, de
 
 
 def collect_regional(client: GtiClient, cfg: Config, now: datetime | None = None, denied: set[str] | None = None) -> list[str]:
-    """Wie `collect_network` fuer alle RE-Linien, Messung `hvv_re_stop` (eigener Aufruf wegen des grossen Gebiets)."""
+    """Wie `collect_network` fuer alle RE- und RB-Linien, Messung `hvv_regional_stop` (eigener Aufruf wegen des grossen Gebiets)."""
     return _collect(client, cfg.regional, now, denied, "vehicle_map_regional")
 
 
@@ -92,7 +92,7 @@ def _collect(client: GtiClient, network: Network | None, now: datetime | None, d
     journeys = response.get("journeys", [])
     lines: list[str] = []
     for journey in journeys:
-        if network.line_prefix and not (journey.get("line", {}).get("name") or "").startswith(network.line_prefix):
+        if network.line_prefixes and not (journey.get("line", {}).get("name") or "").startswith(network.line_prefixes):
             continue
         lines.extend(parse_journey(journey, now_ts, network.horizon_s, network.measurement))
     log.info("getVehicleMap %s: %d Fahrten, %d Halte in den naechsten %d s", network.name, len(journeys), len(lines), network.horizon_s)

@@ -133,7 +133,7 @@ class Network:
     bbox: tuple[float, float, float, float]  # lon1, lat1, lon2, lat2 (WGS84)
     horizon_s: int = 300
     measurement: str = "hvv_network_stop"
-    line_prefix: str = ""  # nur Linien, deren Name so beginnt (z. B. "RE"; R_BAHN enthaelt auch RB)
+    line_prefixes: tuple[str, ...] = ()  # nur Linien, deren Name so beginnt (leer: alle)
 
 
 NETWORK = Network(
@@ -154,15 +154,15 @@ XBUS = Network(
 )
 
 
-# Alle Regionalexpress-Linien (RE, getVehicleMap-Typ R_BAHN; RB ausgenommen): eigener Aufruf, eigene Messung, Gebiet von
+# Alle Regionalexpress- und Regionalbahn-Linien (RE und RB, getVehicleMap-Typ R_BAHN): eigener Aufruf, eigene Messung, Gebiet von
 # Cuxhaven bis Luebeck und von Stade bis Schleswig-Holstein-Mitte. Die Fahrten sind lang, daher der groessere Horizont.
 REGIONAL = Network(
-    name="Regionalexpress HVV",
+    name="Regionalzuege HVV (RE, RB)",
     vehicle_types=("R_BAHN",),
     bbox=(8.45, 53.10, 10.95, 54.05),
     horizon_s=900,
-    measurement="hvv_re_stop",
-    line_prefix="RE",
+    measurement="hvv_regional_stop",
+    line_prefixes=("RE", "RB"),
 )
 
 

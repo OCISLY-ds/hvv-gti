@@ -4,7 +4,7 @@
 // geladen sind und fuer Linien ohne eigenes Icon (S11, S21, S31 = Farbe der Grundlinie) gelten diese Werte
 const COLORS = {};
 const FALLBACK = { U: "#1a6fb5", R: "#c8102e", X: "#a61e8c", S: "#2ca147" };
-const colorOf = (line) => COLORS[line] || COLORS[line.replace(/^([SU]\d)\d$/, "$1")] || FALLBACK[line[0]] || FALLBACK.S;
+const colorOf = (line) => COLORS[line] || COLORS[line.replace(/^([SU]\d)\d$/, "$1")] || (/^RB/.test(line) ? "#ffffff" : FALLBACK[line[0]] || FALLBACK.S);
 
 const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
@@ -16,7 +16,12 @@ const motion = window.HvvMotion;
 const animator = new motion.Animator(() => tracks);
 const hidden = new Set();
 const isX = (line) => /^X/.test(line); // X-Busse (Xpressbus)
-let showX = true, corridorCache = null, lastFetched = null, showBlocks = false, busyKey = "";
+// Kategorien, die der Nutzer komplett ein- und ausblenden kann (Haken im Panel)
+const CATEGORIES = [["S", "S-Bahn"], ["U", "U-Bahn"], ["RE", "RE"], ["RB", "RB"], ["X", "X-Busse"], ["O", "Sonstige"]];
+const catOf = (line) => (/^S\d/.test(line) ? "S" : /^U\d/.test(line) ? "U" : /^RE\d/.test(line) ? "RE" : /^RB\d/.test(line) ? "RB" : isX(line) ? "X" : "O");
+const showCat = Object.fromEntries(CATEGORIES.map(([c]) => [c, true]));
+const isShown = (line) => showCat[catOf(line)];
+let corridorCache = null, lastFetched = null, showBlocks = false, busyKey = "";
 const storage = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* privater Modus */ } },
@@ -294,7 +299,7 @@ function trackGeoJson() {
   const features = [];
   corridorCache ||= layoutPieces(corridors()); // teuer und unabhaengig vom Schalter fuer die X-Busse
   const { pieces, nodes } = corridorCache;
-  const sortedLines = (p) => [...p.lines].filter((l) => showX || !isX(l)).sort((x, y) => x.localeCompare(y, "de", { numeric: true }));
+  const sortedLines = (p) => [...p.lines].filter(isShown).sort((x, y) => x.localeCompare(y, "de", { numeric: true }));
   const laneOf = new Map(); // Stueck -> {Linie: Versatz in Spuren}
   for (const p of pieces) {
     const ls = sortedLines(p), lanes = {};
@@ -352,7 +357,7 @@ function trackGeoJson() {
 function blockGeoJson() {
   const blocks = [], signals = [];
   for (const [k, t] of Object.entries(tracks)) {
-    if (!t.s || !t.s.length || t.p.length < 4 || !t.l.some((l) => l[0] === "S" && !isX(l))) continue;
+    if (!t.s || !t.s.length || t.p.length < 4 || !t.l.some((l) => /^S\d/.test(l) && isShown(l))) continue;
     const edges = [0, ...t.s, 1];
     for (let i = 0; i + 1 < edges.length; i++) {
       blocks.push({
@@ -395,7 +400,7 @@ function stationGeoJson() {
   return {
     type: "FeatureCollection",
     features: Object.values(stations)
-      .filter((s) => showX || !s.l.every(isX))
+      .filter((s) => s.l.some(isShown))
       .map((s) => ({ type: "Feature", properties: { n: s.n, b: s.l.every(isX) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.x, s.y] } })),
   };
 }
@@ -551,7 +556,7 @@ function renderTrains() {
   const west = bounds.getWest() - padX, east = bounds.getEast() + padX, south = bounds.getSouth() - padY, north = bounds.getNorth() + padY;
   for (const e of entries) {
     const { j, pose: p } = e;
-    if (hidden.has(j.l) || (!showX && isX(j.l))) continue;
+    if (hidden.has(j.l) || !isShown(j.l)) continue;
     if (e.id === selectedId) {
       if (popup && popup.isOpen() && !(sel && sel.sheet)) popup.setLngLat([p.x, p.y]);
       // Handy: der Zug bleibt sichtbar, solange die Karte nicht selbst verschoben wird
@@ -580,8 +585,17 @@ function renderTrains() {
 }
 
 function renderLegend() {
-  const counts = new Map();
-  for (const j of journeys) if (showX || !isX(j.l)) counts.set(j.l, (counts.get(j.l) || 0) + 1);
+  const counts = new Map(), perCat = {};
+  for (const j of journeys) {
+    perCat[catOf(j.l)] = (perCat[catOf(j.l)] || 0) + 1;
+    if (isShown(j.l)) counts.set(j.l, (counts.get(j.l) || 0) + 1);
+  }
+  for (const [c] of CATEGORIES) {
+    const n = document.getElementById("catn-" + c);
+    if (n) n.textContent = ` ${perCat[c] || 0}`;
+    const label = document.getElementById("cat-" + c);
+    if (label && c === "O") label.hidden = !perCat.O && showCat.O;
+  }
   const order = [...counts.keys()].sort((a, b) => a[0].localeCompare(b[0]) || a.localeCompare(b, "de", { numeric: true }));
   const box = document.getElementById("legend");
   box.replaceChildren();
@@ -825,27 +839,44 @@ function setupPanel() {
   document.getElementById("phead").onclick = (ev) => { if (ev.target !== btn && !btn.contains(ev.target) && compact()) btn.click(); };
 }
 
+// Haken je Kategorie im Panel; die Wahl merkt sich der Browser (X-Busse: auch die alte Einstellung "showXbus")
+function setupCategories(cfg) {
+  const box = document.getElementById("cats");
+  for (const [c, name] of CATEGORIES) {
+    if (c === "X" && !cfg.xbus) {
+      showCat.X = false;
+      continue;
+    }
+    const saved = storage.get("cat" + c) ?? (c === "X" ? storage.get("showXbus") : null);
+    showCat[c] = saved !== "0";
+    const label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span"), count = document.createElement("span");
+    label.className = "cat";
+    label.id = "cat-" + c;
+    if (c === "O") label.hidden = true; // erst sichtbar, wenn es solche Linien gibt
+    input.type = "checkbox";
+    input.checked = showCat[c];
+    text.textContent = name;
+    count.className = "cn";
+    count.id = "catn-" + c;
+    input.onchange = () => {
+      showCat[c] = input.checked;
+      storage.set("cat" + c, input.checked ? "1" : "0");
+      if (selectedId !== null && !isShown(journeys.find((x) => x.id === selectedId)?.l || "S1")) popup?.remove();
+      rebuildTracks();
+      renderLegend();
+      renderTrains();
+    };
+    label.append(input, text, count);
+    box.append(label);
+  }
+}
+
 async function main() {
   setupPanel();
   const cfg = await loadJson("/api/config");
   try { Object.assign(COLORS, await loadJson("/api/colors")); } catch (e) { /* Standardfarben */ }
   refreshS = cfg.refreshS;
-  const toggle = document.getElementById("xbus");
-  if (cfg.xbus) {
-    showX = storage.get("showXbus") !== "0";
-    toggle.checked = showX;
-    toggle.onchange = () => {
-      showX = toggle.checked;
-      storage.set("showXbus", showX ? "1" : "0");
-      if (!showX && selectedId !== null && isX(journeys.find((x) => x.id === selectedId)?.l || "")) popup?.remove();
-      rebuildTracks();
-      renderLegend();
-      renderTrains();
-    };
-  } else {
-    showX = false;
-    toggle.closest("label").hidden = true;
-  }
+  setupCategories(cfg);
   const blocksToggle = document.getElementById("blocks");
   showBlocks = storage.get("showBlocks") === "1";
   blocksToggle.checked = showBlocks;

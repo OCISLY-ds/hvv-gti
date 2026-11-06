@@ -29,7 +29,7 @@ COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt 
 COURSE_CACHE_S = 60
 TRACKS_SAVE_INTERVAL_S = 300
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
-REGIONAL_LINE = re.compile(r"^RE\d")  # von den Regionalzuegen (R_BAHN) werden alle RE-Linien angezeigt, RB nicht
+REGIONAL_LINE = re.compile(r"^R[EB]\d")  # von den Regionalzuegen (R_BAHN) werden alle RE- und RB-Linien angezeigt
 
 
 class TripIds:
