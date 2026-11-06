@@ -157,33 +157,191 @@ function uncovered(it, lead) {
   return runs;
 }
 
-// Linien mit je einer Spur (Versatz in Linienbreiten) auf einer Geometrie, immer von West nach Ost (bei steilen Strecken von
-// Sued nach Nord), damit die Spurreihenfolge entlang zusammenhaengender Korridore nicht von der Fahrtrichtung abhaengt
-function pushLanes(features, lines, pts) {
-  if (!lines.size) return;
-  const dx = (pts[pts.length - 1][0] - pts[0][0]) * KX, dy = (pts[pts.length - 1][1] - pts[0][1]) * KY;
-  if (Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0) pts.reverse();
-  const sorted = [...lines].sort((x, y) => x.localeCompare(y, "de", { numeric: true })), n = Math.max(1, sorted.length);
-  const geometry = { type: "LineString", coordinates: pts };
-  features.push({ type: "Feature", properties: { k: 0, n }, geometry });
-  sorted.forEach((l, i) => features.push({ type: "Feature", properties: { k: 1, c: colorOf(l), o: i - (n - 1) / 2 }, geometry }));
+// ---- Teilstuecke ausrichten und Spuren fliessend verbinden ----
+//
+// Jedes Teilstueck (Korridor-Geometrie oder Zusatzstueck) wird so gerichtet, dass entlang zusammenhaengender Strecken alle in
+// dieselbe Richtung zeigen. Das Spurversatz-Vorzeichen (rechts/links der Linienrichtung) bleibt damit entlang der Strecke
+// dieselbe physische Seite; bisher drehte jedes Stueck nach seiner eigenen West-Ost-Regel und die Linie sprang seitlich.
+// An den Verbindungen wird der Versatz jeder Linie auf den Mittelwert der Nachbarn gelegt und in den letzten TRANS_M Metern
+// stufenlos (in kleinen Teilstuecken) dorthin ueberblendet.
+const JOIN_M = 30, TRANS_M = 120, TRANS_STEP_M = 30, TANGENT_M = 12;
+
+function metresOf(pts) {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot((pts[i][0] - pts[i - 1][0]) * KX, (pts[i][1] - pts[i - 1][1]) * KY));
+  return cum;
+}
+
+// Richtung (Einheitsvektor in Metern) vom Ende `end` ("s" Anfang, "e" Ende) ins Teilstueck hinein
+function awayTangent(piece, end) {
+  const pts = piece.pts, cum = piece.cum, total = cum[cum.length - 1];
+  const from = end === "s" ? 0 : pts.length - 1, step = end === "s" ? 1 : -1;
+  const dist = (k) => (end === "s" ? cum[k] : total - cum[k]);
+  let j = from;
+  while (j + step >= 0 && j + step < pts.length && dist(j) < TANGENT_M) j += step;
+  const dx = (pts[j][0] - pts[from][0]) * KX, dy = (pts[j][1] - pts[from][1]) * KY, l = Math.hypot(dx, dy) || 1;
+  return [dx / l, dy / l];
+}
+
+function reversePiece(piece) {
+  piece.pts.reverse();
+  piece.cum = metresOf(piece.pts);
+  [piece.nodeS, piece.nodeE] = [piece.nodeE, piece.nodeS];
+}
+
+function layoutPieces(groups) {
+  const pieces = [];
+  for (const { members, lead, extras } of groups) {
+    const lines = new Set();
+    for (const m of members) for (const l of m.t.l) lines.add(l);
+    const pts = [];
+    for (let i = 0; i + 1 < lead.t.p.length; i += 2) pts.push([lead.t.p[i], lead.t.p[i + 1]]);
+    pieces.push({ pts, lines });
+    for (const { run, lines: ls } of extras) {
+      const part = [];
+      for (let i = 0; i + 1 < run.length; i += 2) part.push([run[i] / KX, run[i + 1] / KY]);
+      pieces.push({ pts: part, lines: new Set(ls) });
+    }
+  }
+  for (const p of pieces) p.cum = metresOf(p.pts);
+  // Verbindungsknoten: Enden, die hoechstens JOIN_M auseinanderliegen
+  const ends = [];
+  pieces.forEach((p, i) => {
+    p.id = i;
+    ends.push({ p, end: "s", x: p.pts[0][0] * KX, y: p.pts[0][1] * KY, node: -1 });
+    ends.push({ p, end: "e", x: p.pts[p.pts.length - 1][0] * KX, y: p.pts[p.pts.length - 1][1] * KY, node: -1 });
+  });
+  const grid = new Map(), cell = (v) => Math.floor(v / JOIN_M);
+  for (const e of ends) {
+    const key = `${cell(e.x)},${cell(e.y)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(e);
+  }
+  const nodes = [];
+  for (const e of ends) {
+    if (e.node >= 0) continue;
+    const id = nodes.length, members = [], stack = [e];
+    e.node = id;
+    while (stack.length) {
+      const c = stack.pop();
+      members.push(c);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        for (const o of grid.get(`${cell(c.x) + dx},${cell(c.y) + dy}`) || []) {
+          if (o.node < 0 && Math.hypot(o.x - c.x, o.y - c.y) <= JOIN_M) { o.node = id; stack.push(o); }
+        }
+      }
+    }
+    nodes.push(members);
+  }
+  for (const e of ends) e.p[e.end === "s" ? "nodeS" : "nodeE"] = e.node;
+
+  // Richtung: vom laengsten Stueck aus durch die Knoten propagieren
+  const seen = new Set();
+  const order = [...pieces].sort((a, b) => b.cum[b.cum.length - 1] - a.cum[a.cum.length - 1]);
+  for (const seed of order) {
+    if (seen.has(seed.id)) continue;
+    const dx = (seed.pts[seed.pts.length - 1][0] - seed.pts[0][0]) * KX, dy = (seed.pts[seed.pts.length - 1][1] - seed.pts[0][1]) * KY;
+    if (Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0) reversePiece(seed); // Ausgangsrichtung: West nach Ost (steil: Sued nach Nord)
+    seen.add(seed.id);
+    const queue = [seed];
+    while (queue.length) {
+      const c = queue.shift();
+      for (const end of ["s", "e"]) {
+        const node = end === "s" ? c.nodeS : c.nodeE, aC = awayTangent(c, end);
+        for (const o of nodes[node]) {
+          const q = o.p;
+          if (seen.has(q.id)) continue;
+          // `o.end` ist das Ende von q in dessen Ausgangsrichtung (q wurde noch nicht gedreht)
+          const aQ = awayTangent(q, o.end), dot = aC[0] * aQ[0] + aC[1] * aQ[1];
+          const leaves = (end === "e") === dot < 0; // q beginnt am Knoten (verlaesst ihn) statt dort zu enden
+          if ((o.end === "s") !== leaves) reversePiece(q);
+          seen.add(q.id);
+          queue.push(q);
+        }
+      }
+    }
+  }
+  // Knoten nach dem Drehen neu aufbauen: je Knoten die Enden mit ihrer endgueltigen Lage (Anfang/Ende)
+  const finalNodes = nodes.map(() => []);
+  for (const p of pieces) {
+    finalNodes[p.nodeS].push({ p, end: "s" });
+    finalNodes[p.nodeE].push({ p, end: "e" });
+  }
+  return { pieces, nodes: finalNodes };
+}
+
+// Fahrtrichtung des Teilstuecks am Knoten (am Anfang vom Knoten weg, am Ende zum Knoten hin)
+function travelTangent(piece, end) {
+  const a = awayTangent(piece, end);
+  return end === "s" ? a : [-a[0], -a[1]];
+}
+
+// Teilstueck der Linie zwischen den Streckenlaengen d0 und d1 (Meter)
+function slicePoints(pts, cum, d0, d1) {
+  const at = (d) => {
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const span = cum[i] - cum[i - 1] || 1, r = Math.min(1, Math.max(0, (d - cum[i - 1]) / span));
+    return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * r, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * r];
+  };
+  const out = [at(d0)];
+  for (let i = 1; i < pts.length - 1; i++) if (cum[i] > d0 && cum[i] < d1) out.push(pts[i]);
+  out.push(at(d1));
+  return out;
 }
 
 function trackGeoJson() {
   const features = [];
-  corridorCache ||= corridors(); // die Zusammenfassung ist teuer und haengt nur von den Gleisen ab, nicht vom Schalter
-  const visible = (ls) => new Set(ls.filter((l) => showX || !isX(l)));
-  for (const { members, lead, extras } of corridorCache) {
-    const lines = new Set();
-    for (const m of members) for (const l of visible(m.t.l)) lines.add(l);
-    if (!lines.size) continue;
-    const pts = [];
-    for (let i = 0; i + 1 < lead.t.p.length; i += 2) pts.push([lead.t.p[i], lead.t.p[i + 1]]);
-    pushLanes(features, lines, pts);
-    for (const { run, lines: ls } of extras) {
-      const part = [];
-      for (let i = 0; i + 1 < run.length; i += 2) part.push([run[i] / KX, run[i + 1] / KY]);
-      pushLanes(features, visible(ls), part);
+  corridorCache ||= layoutPieces(corridors()); // teuer und unabhaengig vom Schalter fuer die X-Busse
+  const { pieces, nodes } = corridorCache;
+  const sortedLines = (p) => [...p.lines].filter((l) => showX || !isX(l)).sort((x, y) => x.localeCompare(y, "de", { numeric: true }));
+  const laneOf = new Map(); // Stueck -> {Linie: Versatz in Spuren}
+  for (const p of pieces) {
+    const ls = sortedLines(p), lanes = {};
+    ls.forEach((l, i) => (lanes[l] = i - (ls.length - 1) / 2));
+    laneOf.set(p, lanes);
+  }
+  // Versatz am Knoten: alle Stuecke mit der Linie werden in das Bezugssystem des ersten umgerechnet (Vorzeichen nach der
+  // Fahrtrichtung am Knoten), gemittelt und fuer jedes Stueck zurueckgerechnet, so dass alle denselben Punkt ansteuern
+  const consensus = new Map();
+  const target = (p, end, l) => {
+    const node = end === "s" ? p.nodeS : p.nodeE, key = `${node}|${l}`;
+    let c = consensus.get(key);
+    if (!c) {
+      const users = nodes[node].filter((o) => laneOf.get(o.p)[l] !== undefined);
+      const ref = travelTangent(users[0].p, users[0].end);
+      let sum = 0;
+      const signs = new Map();
+      for (const o of users) {
+        const tq = travelTangent(o.p, o.end), sign = ref[0] * tq[0] + ref[1] * tq[1] >= 0 ? 1 : -1;
+        signs.set(`${o.p.id}${o.end}`, sign);
+        sum += sign * laneOf.get(o.p)[l];
+      }
+      c = { mean: sum / users.length, signs };
+      consensus.set(key, c);
+    }
+    return (c.signs.get(`${p.id}${end}`) || 1) * c.mean;
+  };
+  for (const p of pieces) {
+    const lines = sortedLines(p);
+    if (!lines.length) continue;
+    const total = p.cum[p.cum.length - 1], lanes = laneOf.get(p);
+    features.push({ type: "Feature", properties: { k: 0, n: lines.length }, geometry: { type: "LineString", coordinates: p.pts } });
+    const lt = Math.min(TRANS_M, total / 2);
+    for (const l of lines) {
+      const own = lanes[l], t0 = target(p, "s", l), t1 = target(p, "e", l), color = colorOf(l);
+      const emit = (o, c) => features.push({ type: "Feature", properties: { k: 1, c: color, o }, geometry: { type: "LineString", coordinates: c } });
+      if ((Math.abs(t0 - own) < 0.05 && Math.abs(t1 - own) < 0.05) || lt < 8) { emit(own, p.pts); continue; }
+      const steps = Math.max(1, Math.round(lt / TRANS_STEP_M)), cuts = [0];
+      for (let i = 1; i <= steps; i++) cuts.push((lt * i) / steps);
+      cuts.push(total - lt);
+      for (let i = steps - 1; i >= 0; i--) cuts.push(total - (lt * i) / steps);
+      for (let i = 0; i + 1 < cuts.length; i++) {
+        if (cuts[i + 1] - cuts[i] < 0.5) continue;
+        const mid = (cuts[i] + cuts[i + 1]) / 2;
+        const w0 = Math.max(0, 1 - mid / lt), w1 = Math.max(0, 1 - (total - mid) / lt);
+        emit(own + (t0 - own) * w0 + (t1 - own) * w1, slicePoints(p.pts, p.cum, cuts[i], cuts[i + 1]));
+      }
     }
   }
   return { type: "FeatureCollection", features };
