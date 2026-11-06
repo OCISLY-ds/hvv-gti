@@ -41,19 +41,35 @@ html,body{margin:0;height:100%;background:#16202e;font:14px system-ui,sans-serif
 .popup .stop.passed{color:#9aa3b2}
 .popup .stop.passed .dl{color:#9aa3b2}
 .popup .stop.next{background:#e8f1ff;font-weight:600}
-#cats{display:grid;grid-template-columns:1fr 1fr;column-gap:10px;margin-bottom:6px}
-.cat,#btoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;cursor:pointer}
-.cat[hidden]{display:none}
-.cat .cn{color:#8a97ab;font-size:11px}
-#btoggle{margin-bottom:8px}
+#btoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer}
+/* Kategorie-Schalter: Rechteck mit dem Symbol der Verkehrsart, gedimmt wenn ausgeblendet */
+#cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.chip{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:46px;padding:6px 6px 4px;border:1px solid #ffffff2e;border-radius:8px;background:#ffffff0f;color:#e8eef8;font:inherit;cursor:pointer}
+.chip:hover{background:#ffffff1c}
+.chip[hidden]{display:none}
+.chip.off{opacity:.38;filter:grayscale(1);border-style:dashed}
+.chip .cn{color:#9aa6b8;font-size:11px;line-height:1}
+.sym{display:flex;align-items:center;justify-content:center;height:22px;min-width:22px;padding:0 5px;box-sizing:border-box;color:#fff;font-weight:700;font-size:13px;line-height:1;border-radius:4px}
+.sym-S{background:#2ca147;border-radius:50%;width:22px;padding:0}
+.sym-U{background:#1a6fb5}
+.sym-RE{background:#c8102e;font-size:11px}
+.sym-RB{background:#fff;color:#1b2636;font-size:11px}
+.sym-X{background:#a61e8c}
+.sym-O{background:#5a6679}
+#legend .ghead{display:flex;align-items:center;gap:6px;margin:6px 0 2px;padding:3px 4px;color:#9aa6b8;font-size:12px;font-weight:600;cursor:pointer;border-radius:5px}
+#legend .ghead:hover{background:#ffffff14}
+#legend .ghead::before{content:"\25B8";display:inline-block;width:10px;transition:transform .12s}
+#legend .ghead.open::before{transform:rotate(90deg)}
 
 /* ---- Touch und kleine Bildschirme ---- */
 html,body{-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 #map{touch-action:none}
 @media (pointer:coarse){
   #legend .row{padding:7px 6px}
-  .cat,#btoggle{padding:6px 2px;margin-bottom:4px}
-  .cat input,#btoggle input{width:20px;height:20px}
+  .chip{min-width:52px;padding:8px 8px 5px}
+  #legend .ghead{padding:8px 6px}
+  #btoggle{padding:6px 2px;margin-bottom:4px}
+  #btoggle input{width:20px;height:20px}
   .maplibregl-ctrl-group button{width:40px;height:40px}
 }
 @media (max-width:700px){

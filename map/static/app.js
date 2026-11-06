@@ -19,6 +19,8 @@ const isX = (line) => /^X/.test(line); // X-Busse (Xpressbus)
 // Kategorien, die der Nutzer komplett ein- und ausblenden kann (Haken im Panel)
 const CATEGORIES = [["S", "S-Bahn"], ["U", "U-Bahn"], ["RE", "RE"], ["RB", "RB"], ["X", "X-Busse"], ["O", "Sonstige"]];
 const catOf = (line) => (/^S\d/.test(line) ? "S" : /^U\d/.test(line) ? "U" : /^RE\d/.test(line) ? "RE" : /^RB\d/.test(line) ? "RB" : isX(line) ? "X" : "O");
+const SYMBOLS = { S: "S", U: "U", RE: "RE", RB: "RB", X: "X", O: "…" }; // Beschriftung der Kategorie-Schalter
+const COLLAPSED = new Set(["RE", "RB"]); // in der Liste standardmaessig eingeklappt
 const showCat = Object.fromEntries(CATEGORIES.map(([c]) => [c, true]));
 const isShown = (line) => showCat[catOf(line)];
 let corridorCache = null, lastFetched = null, showBlocks = false, busyKey = "";
@@ -592,31 +594,50 @@ function renderLegend() {
   }
   for (const [c] of CATEGORIES) {
     const n = document.getElementById("catn-" + c);
-    if (n) n.textContent = ` ${perCat[c] || 0}`;
-    const label = document.getElementById("cat-" + c);
-    if (label && c === "O") label.hidden = !perCat.O && showCat.O;
+    if (n) n.textContent = String(perCat[c] || 0);
+    const chip = document.getElementById("cat-" + c);
+    if (chip && c === "O") chip.hidden = !perCat.O && showCat.O;
   }
   const order = [...counts.keys()].sort((a, b) => a[0].localeCompare(b[0]) || a.localeCompare(b, "de", { numeric: true }));
   const box = document.getElementById("legend");
   box.replaceChildren();
-  for (const line of order) {
-    const row = document.createElement("div");
-    row.className = "row" + (hidden.has(line) ? " off" : "");
-    const img = document.createElement("img");
-    img.src = `/icon/${encodeURIComponent(line)}.svg`;
-    img.alt = line;
-    if (onWhite(line)) img.className = "on-white";
-    const n = document.createElement("span");
-    n.className = "n";
-    n.textContent = counts.get(line);
-    row.append(img, n);
-    row.onclick = () => {
-      hidden.has(line) ? hidden.delete(line) : hidden.add(line);
+  // Linien je Kategorie; RE und RB sind eingeklappt, bis der Nutzer sie oeffnet (der Browser merkt sich die Wahl)
+  const groups = new Map();
+  for (const [c, name] of CATEGORIES) groups.set(c, { name, lines: [], el: null });
+  for (const line of order) groups.get(catOf(line)).lines.push(line);
+  for (const [c, g] of groups) {
+    if (!g.lines.length) continue;
+    const open = (storage.get("legend" + c) ?? (COLLAPSED.has(c) ? "0" : "1")) === "1";
+    const head = document.createElement("div");
+    head.className = "ghead" + (open ? " open" : "");
+    const total = g.lines.reduce((a, l) => a + counts.get(l), 0);
+    head.textContent = `${g.name} · ${total}`;
+    head.onclick = () => {
+      storage.set("legend" + c, open ? "0" : "1");
       renderLegend();
-      renderTrains();
     };
-    box.append(row);
+    box.append(head);
+    if (open) for (const line of g.lines) box.append(legendRow(line, counts.get(line)));
   }
+}
+
+function legendRow(line, count) {
+  const row = document.createElement("div");
+  row.className = "row" + (hidden.has(line) ? " off" : "");
+  const img = document.createElement("img");
+  img.src = `/icon/${encodeURIComponent(line)}.svg`;
+  img.alt = line;
+  if (onWhite(line)) img.className = "on-white";
+  const n = document.createElement("span");
+  n.className = "n";
+  n.textContent = count;
+  row.append(img, n);
+  row.onclick = () => {
+    hidden.has(line) ? hidden.delete(line) : hidden.add(line);
+    renderLegend();
+    renderTrains();
+  };
+  return row;
 }
 
 async function refreshVehicles() {
@@ -849,25 +870,30 @@ function setupCategories(cfg) {
     }
     const saved = storage.get("cat" + c) ?? (c === "X" ? storage.get("showXbus") : null);
     showCat[c] = saved !== "0";
-    const label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span"), count = document.createElement("span");
-    label.className = "cat";
-    label.id = "cat-" + c;
-    if (c === "O") label.hidden = true; // erst sichtbar, wenn es solche Linien gibt
-    input.type = "checkbox";
-    input.checked = showCat[c];
-    text.textContent = name;
+    const chip = document.createElement("button"), sym = document.createElement("span"), count = document.createElement("span");
+    chip.type = "button";
+    chip.className = "chip" + (showCat[c] ? "" : " off");
+    chip.id = "cat-" + c;
+    chip.title = name;
+    chip.setAttribute("aria-label", name);
+    chip.setAttribute("aria-pressed", String(showCat[c]));
+    if (c === "O") chip.hidden = true; // erst sichtbar, wenn es solche Linien gibt
+    sym.className = "sym sym-" + c;
+    sym.textContent = SYMBOLS[c];
     count.className = "cn";
     count.id = "catn-" + c;
-    input.onchange = () => {
-      showCat[c] = input.checked;
-      storage.set("cat" + c, input.checked ? "1" : "0");
+    chip.onclick = () => {
+      showCat[c] = !showCat[c];
+      chip.classList.toggle("off", !showCat[c]);
+      chip.setAttribute("aria-pressed", String(showCat[c]));
+      storage.set("cat" + c, showCat[c] ? "1" : "0");
       if (selectedId !== null && !isShown(journeys.find((x) => x.id === selectedId)?.l || "S1")) popup?.remove();
       rebuildTracks();
       renderLegend();
       renderTrains();
     };
-    label.append(input, text, count);
-    box.append(label);
+    chip.append(sym, count);
+    box.append(chip);
   }
 }
 
