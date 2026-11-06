@@ -159,13 +159,13 @@ class VehicleFeedTest(unittest.TestCase):
         self.assertEqual((len(feed.tracks), set(feed.stations)), (1, {"SA", "SB"}))
         self.assertEqual([j["m"] for j in data["journeys"]], ["X"])
 
-    def test_only_re5_of_the_regional_trains_is_shown(self):
+    def test_all_re_lines_but_no_rb_of_the_regional_trains_are_shown(self):
         soon = int(time.time()) + 10
-        trains = [journey("RE4", soon, "R_BAHN"), journey("RE5", soon, "R_BAHN"), journey("S1", soon)]
+        trains = [journey("RE4", soon, "R_BAHN"), journey("RE5", soon, "R_BAHN"), journey("RB81", soon, "R_BAHN"), journey("S1", soon)]
         with tempfile.TemporaryDirectory() as tmp:
             feed = web.VehicleFeed(FakeClient({"journeys": trains}), Path(tmp))
             data = feed._fetch(first=False)
-        self.assertEqual(sorted(j["l"] for j in data["journeys"]), ["RE5", "S1"])
+        self.assertEqual(sorted(j["l"] for j in data["journeys"]), ["RE4", "RE5", "S1"])
         self.assertEqual({j["m"] for j in data["journeys"]}, {"R", "S"})
 
     def test_fetch_builds_journeys_tracks_and_stations(self):

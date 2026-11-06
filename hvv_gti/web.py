@@ -8,6 +8,7 @@ import gzip
 import json
 import logging
 import mimetypes
+import re
 import threading
 import time
 from http import HTTPStatus
@@ -27,7 +28,7 @@ COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt 
 COURSE_CACHE_S = 60
 TRACKS_SAVE_INTERVAL_S = 300
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
-REGIONAL_LINES = frozenset({"RE5"})  # von den Regionalzuegen (R_BAHN) wird nur diese Linie angezeigt
+REGIONAL_LINE = re.compile(r"^RE\d")  # von den Regionalzuegen (R_BAHN) werden alle RE-Linien angezeigt, RB nicht
 
 
 class TripIds:
@@ -129,7 +130,7 @@ class VehicleFeed:
         *,
         refresh_s: float = 30.0,
         window_s: int = 300,
-        bbox: tuple[float, float, float, float] = (8.60, 53.20, 10.60, 53.95),
+        bbox: tuple[float, float, float, float] = (8.45, 53.10, 10.95, 54.05),
         vehicle_types: tuple[str, ...] = ("S_BAHN", "U_BAHN", "R_BAHN", "XPRESSBUS"),
     ):
         self.client = client
@@ -209,7 +210,7 @@ class VehicleFeed:
         candidates = []
         for j in response.get("journeys", []):
             line = j.get("line", {}).get("name") or "?"
-            if j.get("vehicleType") == "R_BAHN" and line not in REGIONAL_LINES:
+            if j.get("vehicleType") == "R_BAHN" and not REGIONAL_LINE.match(line):
                 continue
             segs = sorted(j.get("segments", []), key=lambda s: s["startDateTime"])
             out = []
@@ -360,6 +361,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types})
+            if path == "/api/colors":
+                return self._json(self.app.icons.colors())
             if path == "/healthz":
                 return self._send(200, b"ok", "text/plain")
             if path.startswith("/icon/"):

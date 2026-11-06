@@ -1,10 +1,10 @@
 "use strict";
 
-const COLORS = {
-  S1: "#2ca147", S2: "#b0185a", S3: "#6f3c97", S5: "#e5732c", S11: "#2ca147", S21: "#b0185a", S31: "#6f3c97",
-  U1: "#1a6fb5", U2: "#e30613", U3: "#f2b200", U4: "#00a3a0",
-};
-const colorOf = (line) => COLORS[line] || (line[0] === "U" ? "#1a6fb5" : /^R[EB]/.test(line) ? "#c8102e" : line[0] === "X" ? "#a61e8c" : "#2ca147");
+// Linienfarben kommen vom Server aus den offiziellen Geofox-Icons (/api/colors), damit Karte und Logos uebereinstimmen; bis sie
+// geladen sind und fuer Linien ohne eigenes Icon (S11, S21, S31 = Farbe der Grundlinie) gelten diese Werte
+const COLORS = {};
+const FALLBACK = { U: "#1a6fb5", R: "#c8102e", X: "#a61e8c", S: "#2ca147" };
+const colorOf = (line) => COLORS[line] || COLORS[line.replace(/^([SU]\d)\d$/, "$1")] || FALLBACK[line[0]] || FALLBACK.S;
 
 const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
@@ -670,6 +670,7 @@ function setupPanel() {
 async function main() {
   setupPanel();
   const cfg = await loadJson("/api/config");
+  try { Object.assign(COLORS, await loadJson("/api/colors")); } catch (e) { /* Standardfarben */ }
   refreshS = cfg.refreshS;
   const toggle = document.getElementById("xbus");
   if (cfg.xbus) {

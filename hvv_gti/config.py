@@ -133,6 +133,7 @@ class Network:
     bbox: tuple[float, float, float, float]  # lon1, lat1, lon2, lat2 (WGS84)
     horizon_s: int = 300
     measurement: str = "hvv_network_stop"
+    line_prefix: str = ""  # nur Linien, deren Name so beginnt (z. B. "RE"; R_BAHN enthaelt auch RB)
 
 
 NETWORK = Network(
@@ -153,6 +154,18 @@ XBUS = Network(
 )
 
 
+# Alle Regionalexpress-Linien (RE, getVehicleMap-Typ R_BAHN; RB ausgenommen): eigener Aufruf, eigene Messung, Gebiet von
+# Cuxhaven bis Luebeck und von Stade bis Schleswig-Holstein-Mitte. Die Fahrten sind lang, daher der groessere Horizont.
+REGIONAL = Network(
+    name="Regionalexpress HVV",
+    vehicle_types=("R_BAHN",),
+    bbox=(8.45, 53.10, 10.95, 54.05),
+    horizon_s=900,
+    measurement="hvv_re_stop",
+    line_prefix="RE",
+)
+
+
 @dataclass(frozen=True)
 class Config:
     gti_user: str = ""
@@ -164,6 +177,7 @@ class Config:
     corridor: Corridor | None = CORRIDOR
     network: Network | None = NETWORK
     xbus: Network | None = XBUS
+    regional: Network | None = REGIONAL
     poll_interval: float = 60.0
     # Stoerungsmeldungen aendern sich selten und die Antwort ist gross (~75 KB); 0 schaltet sie ab.
     announcement_interval: float = 300.0

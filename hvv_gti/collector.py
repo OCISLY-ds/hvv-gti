@@ -8,7 +8,7 @@ from .announcements import collect_announcements
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .config import Config, Route
 from .influx import InfluxError, InfluxWriter, line_protocol
-from .network import collect_network, collect_xbus
+from .network import collect_network, collect_regional, collect_xbus
 from .trains import collect_trains
 from .usage import call_lines
 
@@ -225,6 +225,7 @@ def run(
     trains_denied: set[str] = set()
     network_denied: set[str] = set()
     xbus_denied: set[str] = set()
+    regional_denied: set[str] = set()
     announcements_denied: set[str] = set()
     last_announcements: float | None = None
     usage: list[str] = []  # Anfrageprotokoll, das noch nicht geschrieben ist (auch Fehlversuche zaehlen)
@@ -237,6 +238,7 @@ def run(
             lines += collect_trains(client, cfg, denied=trains_denied)
             lines += collect_network(client, cfg, denied=network_denied)
             lines += collect_xbus(client, cfg, denied=xbus_denied)
+            lines += collect_regional(client, cfg, denied=regional_denied)
             due = last_announcements is None or time.monotonic() - last_announcements >= cfg.announcement_interval
             if cfg.announcement_interval > 0 and due:
                 lines += collect_announcements(client, cfg, denied=announcements_denied)

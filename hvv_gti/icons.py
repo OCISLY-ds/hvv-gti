@@ -26,6 +26,18 @@ CONTENT_TYPES = {"svg": "image/svg+xml", "png": "image/png"}
 TYPE_RANK = {"TRAIN": 0, "BUS": 1}
 
 
+FILL_RGB = re.compile(r'fill="rgb\((\d+),(\d+),(\d+)\)"')
+
+
+def badge_color(svg: str) -> str | None:
+    """Farbe des Linienschildes (erste Fuellfarbe, die nicht Weiss/Schwarz ist) als #rrggbb; Regionalzuege haben keine."""
+    for r, g, b in FILL_RGB.findall(svg):
+        rgb = (int(r), int(g), int(b))
+        if rgb not in ((255, 255, 255), (0, 0, 0)):
+            return "#%02x%02x%02x" % rgb
+    return None
+
+
 def build_index(lines: list[dict]) -> dict[str, str]:
     best: dict[str, tuple[int, str]] = {}
     for line in lines:
@@ -80,6 +92,18 @@ class IconStore:
                 pass
             time.sleep(0.5)
         return None
+
+    def colors(self) -> dict[str, str]:
+        """Linienfarben aus den lokalen SVG-Icons, damit Karte und Logos dieselben Farben zeigen."""
+        out: dict[str, str] = {}
+        for path in sorted(self.dir.glob("*.svg")):
+            try:
+                color = badge_color(path.read_text("utf-8", errors="ignore"))
+            except OSError:
+                continue
+            if color:
+                out[path.stem] = color
+        return out
 
     def get(self, name: str, fmt: str = "svg") -> Path | None:
         """Pfad zur Icon-Datei (wird bei Bedarf geladen) oder None, wenn die Linie unbekannt ist."""
