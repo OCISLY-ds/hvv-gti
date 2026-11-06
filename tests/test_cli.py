@@ -87,11 +87,15 @@ class CliTest(unittest.TestCase):
         with FakeGti(responses=gti_responses([departure("S5", 2, 60, direction="Elbgaustraße")])) as gti:
             code, out, _ = run_cli(gti, "collect", "--dry-run", "--once")
         self.assertEqual(code, 0)
-        lines = out.strip().splitlines()
+        printed = out.strip().splitlines()
+        lines = [l for l in printed if l.startswith("hvv_stop_event,")]
         self.assertEqual(len(lines), 3)  # 3 S5-Messpunkte, nur Abfahrten
-        self.assertTrue(all(l.startswith("hvv_stop_event,") and "kind=departure" in l and ",route=" in l for l in lines))
+        self.assertTrue(all("kind=departure" in l and ",route=" in l for l in lines))
         requests = [r[1] for r in gti.requests if r[0].endswith("departureList")]
-        self.assertEqual(len(requests), 7)  # 7 Haltestellen/Verkehrsmittel-Kombinationen, keine Ankuenfte
+        self.assertEqual(len(requests), 9)  # 9 Haltestellen/Verkehrsmittel-Kombinationen, keine Ankuenfte
+        usage = [l for l in printed if l.startswith("hvv_api_request,")]
+        self.assertEqual(len(usage), len(gti.requests))  # jeder GTI-Aufruf steht im Anfrageprotokoll
+        self.assertEqual(len(printed), len(lines) + len(usage))
 
     def test_collect_requires_influx_settings(self):
         with FakeGti() as gti:

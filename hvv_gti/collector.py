@@ -1,16 +1,23 @@
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from .announcements import collect_announcements
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .config import Config, Route
 from .influx import InfluxError, InfluxWriter, line_protocol
+from .network import collect_network, collect_xbus
+from .trains import collect_trains
+from .usage import call_lines
 
 log = logging.getLogger("hvv_gti.collector")
 
 MEASUREMENT = "hvv_stop_event"
 MAX_BACKOFF = 600.0
+# Hoechstens soviele noch nicht geschriebene Anfrageprotokoll-Zeilen bleiben im Speicher (Influx lange nicht erreichbar).
+MAX_PENDING_USAGE = 5000
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,30 @@ def match_route(routes: list[Route], direction: str) -> Route | None:
     return None
 
 
+def reason_fields(dep: dict) -> dict[str, str]:
+    """Hinweise der Abfahrt (`attributes`) als Felder `reason_types` und `reason_text`.
+
+    Reine Linieninfos (nur Typ NORMAL) sind kein Grund und werden uebergangen. Es sind Felder und keine Tags: Taucht
+    der Hinweis erst bei einer spaeteren Abfrage auf, soll dieselbe Abfahrt nicht als zweite Serie gespeichert werden.
+    """
+    types: list[str] = []
+    texts: list[str] = []
+    for attr in dep.get("attributes") or []:
+        attr_types = [t for t in attr.get("types") or [] if t]
+        if attr_types and set(attr_types) == {"NORMAL"}:
+            continue
+        types.extend(t for t in attr_types if t not in types)
+        text = (attr.get("value") or attr.get("title") or "").strip()
+        if text and text not in texts:
+            texts.append(text)
+    fields = {}
+    if types:
+        fields["reason_types"] = ",".join(types)
+    if texts:
+        fields["reason_text"] = " | ".join(texts)
+    return fields
+
+
 def parse_events(
     response: dict,
     reference: datetime,
@@ -58,8 +89,9 @@ def parse_events(
     """`reference` ist die (auf die Minute gerundete) Anfragezeit; timeOffset ist planmaessig, delay separat.
 
     Fahrten von Linien ohne Route werden ignoriert. Passt bei einer bekannten Linie keine Richtung, wird die
-    Fahrt trotzdem gespeichert (route = "<Linie> <Haltestelle> -> <Richtung>") und einmalig gewarnt.
+    Fahrt trotzdem unter der Linie gespeichert (direction = GTI-Ziel) und einmalig gewarnt.
     Fehlt `delay` (kein Echtzeitwert), fehlt auch das Feld `delay_s`; nur Ausfaelle bekommen 0.
+    Haengt an der Abfahrt ein Hinweis (z. B. "Fahrzeug im Stau"), kommen `reason_types`/`reason_text` dazu.
     """
     by_line: dict[str, list[Route]] = {}
     for route in routes:
@@ -73,28 +105,30 @@ def parse_events(
         direction = service.get("direction") or "-"
         route = match_route(candidates, direction)
         if route:
-            route_name = route.name
+            route_name, heading = route.name, route.heading
         else:
-            route_name = f"{service['name']} {stop.label} → {direction}"
+            route_name, heading = candidates[0].name, direction
             key = (service["name"], stop.label, direction)
             if unmatched is not None and key not in unmatched:
                 unmatched.add(key)
-                log.warning("Keine Strecke fuer %s ab %s Richtung '%s', gespeichert als '%s'", *key, route_name)
+                log.warning("Keine Richtung fuer %s ab %s Ziel '%s', gespeichert als Linie '%s'", *key, route_name)
         planned = reference + timedelta(minutes=int(dep.get("timeOffset", 0)))
         cancelled = bool(dep.get("cancelled"))
-        fields: dict[str, int] = {"cancelled": 1 if cancelled else 0, "extra": 1 if dep.get("extra") else 0}
+        fields: dict[str, int | str] = {"cancelled": 1 if cancelled else 0, "extra": 1 if dep.get("extra") else 0}
         if dep.get("delay") is not None:
             fields["delay_s"] = int(dep["delay"])
         elif cancelled:
             fields["delay_s"] = 0
         if dep.get("serviceId") is not None:
             fields["service_id"] = int(dep["serviceId"])
+        fields.update(reason_fields(dep))
         tags = {
             "route": route_name,
             "line": service["name"],
             "station": stop.label,
             "kind": kind,
-            "direction": direction,
+            "direction": heading,
+            "destination": direction,
             "origin": service.get("origin") or "-",
         }
         lines.append(line_protocol(MEASUREMENT, tags, fields, int(planned.timestamp()) * 1_000_000_000))
@@ -170,6 +204,13 @@ def collect_once(
     return lines
 
 
+def _emit(writer: InfluxWriter | None, lines: list[str]) -> None:
+    if writer is None:
+        print("\n".join(lines), flush=True)
+    else:
+        writer.write(lines)
+
+
 def run(
     cfg: Config,
     client: GtiClient,
@@ -181,21 +222,42 @@ def run(
     stops: dict[str, Stop] | None = None
     denied: set[str] = set()
     unmatched: set[tuple[str, str, str]] = set()
+    trains_denied: set[str] = set()
+    network_denied: set[str] = set()
+    xbus_denied: set[str] = set()
+    announcements_denied: set[str] = set()
+    last_announcements: float | None = None
+    usage: list[str] = []  # Anfrageprotokoll, das noch nicht geschrieben ist (auch Fehlversuche zaehlen)
     failures = 0
     while not stop_event.is_set():
         try:
             if stops is None:
                 stops = resolve_stops(client, cfg.routes)
             lines = collect_once(client, stops, cfg, denied=denied, unmatched=unmatched)
-            if writer is None:
-                print("\n".join(lines), flush=True)
-            else:
-                writer.write(lines)
-                log.info("%d Datenpunkte geschrieben", len(lines))
+            lines += collect_trains(client, cfg, denied=trains_denied)
+            lines += collect_network(client, cfg, denied=network_denied)
+            lines += collect_xbus(client, cfg, denied=xbus_denied)
+            due = last_announcements is None or time.monotonic() - last_announcements >= cfg.announcement_interval
+            if cfg.announcement_interval > 0 and due:
+                lines += collect_announcements(client, cfg, denied=announcements_denied)
+                last_announcements = time.monotonic()
+            usage += call_lines(client.take_calls())
+            _emit(writer, lines + usage)
+            if writer is not None:
+                log.info("%d Datenpunkte und %d Anfragen geschrieben", len(lines), len(usage))
+            usage.clear()
             failures = 0
         except (GtiError, InfluxError) as exc:
             failures += 1
             log.error("Zyklus fehlgeschlagen (%d in Folge): %s", failures, exc)
+            usage += call_lines(client.take_calls())
+            del usage[:-MAX_PENDING_USAGE]
+            if usage and isinstance(exc, GtiError):
+                try:
+                    _emit(writer, usage)
+                    usage.clear()
+                except InfluxError as influx_exc:
+                    log.error("Anfrageprotokoll nicht geschrieben: %s", influx_exc)
         if once:
             return 1 if failures else 0
         wait = cfg.poll_interval if not failures else min(cfg.poll_interval * 2**failures, MAX_BACKOFF)

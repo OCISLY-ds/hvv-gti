@@ -1,0 +1,69 @@
+{
+  "layers": {
+    "admin": {
+      "minzoom": 0,
+      "maxzoom": 14,
+      "simplify_below": 10,
+      "simplify_level": 0.0005
+    },
+    "aeroway": {
+      "minzoom": 9,
+      "maxzoom": 14
+    },
+    "building": {
+      "minzoom": 13,
+      "maxzoom": 14,
+      "filter_below": 13,
+      "filter_area": 1e-08
+    },
+    "landuse": {
+      "minzoom": 5,
+      "maxzoom": 14,
+      "filter_below": 8,
+      "filter_area": 2e-07,
+      "combine_polygons_below": 8,
+      "simplify_below": 12,
+      "simplify_level": 8e-05
+    },
+    "road": {
+      "minzoom": 5,
+      "maxzoom": 14,
+      "simplify_below": 12,
+      "simplify_level": 5e-05,
+      "simplify_ratio": 1.5,
+      "z_order_ascending": true
+    },
+    "structure": {
+      "minzoom": 13,
+      "maxzoom": 14
+    },
+    "water": {
+      "minzoom": 0,
+      "maxzoom": 14,
+      "filter_below": 8,
+      "filter_area": 1e-06,
+      "simplify_below": 13,
+      "simplify_level": 0.0002,
+      "simplify_algorithm": "visvalingam"
+    },
+    "waterway": {
+      "minzoom": 7,
+      "maxzoom": 14,
+      "simplify_below": 13,
+      "simplify_level": 0.0001
+    }
+  },
+  "settings": {
+    "minzoom": 0,
+    "maxzoom": 14,
+    "basezoom": 14,
+    "include_ids": false,
+    "compress": "gzip",
+    "version": "0.1.0",
+    "high_resolution": false,
+    "mvt_version": 2,
+    "name": "Hamburg und Umland",
+    "description": "OpenStreetMap-Extrakt Hamburg, Stade, Pinneberg, Elmshorn, Lueneburg u.a., Schema von FreiFahren (MIT)",
+    "attribution": "\u00a9 OpenStreetMap contributors"
+  }
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16202e">
+<title>HVV Live-Karte</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+<aside id="panel" class="collapsed">
+  <header id="phead">
+    <div><h1>HVV Live-Karte</h1><div id="status">lade ...</div></div>
+    <button id="ptoggle" type="button" aria-expanded="false" aria-controls="pbody" title="Linien ein-/ausblenden"><span class="chev"></span></button>
+  </header>
+  <div id="pbody">
+    <label id="xtoggle"><input type="checkbox" id="xbus" checked> X-Busse anzeigen</label>
+    <label id="btoggle"><input type="checkbox" id="blocks"> Signalblöcke anzeigen</label>
+    <div id="legend"></div>
+  </div>
+</aside>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script src="motion.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

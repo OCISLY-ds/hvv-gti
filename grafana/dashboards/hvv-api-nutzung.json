@@ -1,0 +1,835 @@
+{
+  "uid": "hvv-api-nutzung",
+  "title": "HVV API-Nutzung (Anfragen pro Sekunde)",
+  "description": "Wie oft der Collector die Geofox-Schnittstelle (GTI) des HVV aufruft: Anfragen pro Sekunde, Latenz, Fehler und Aufrufe je Endpunkt.",
+  "tags": [
+    "hvv",
+    "api",
+    "oepnv"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "Europe/Berlin",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "label": "Datenquelle",
+        "type": "datasource",
+        "query": "influxdb",
+        "refresh": 1,
+        "current": {
+          "selected": true,
+          "text": "HVV InfluxDB",
+          "value": "hvv-influx"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "bucket",
+        "label": "Bucket",
+        "type": "textbox",
+        "query": "hvv",
+        "current": {
+          "text": "hvv",
+          "value": "hvv"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "hvv",
+            "value": "hvv"
+          }
+        ],
+        "hide": 2
+      },
+      {
+        "name": "fenster",
+        "label": "Fenster",
+        "type": "custom",
+        "query": "1m,5m,15m,1h",
+        "current": {
+          "text": "5m",
+          "value": "5m"
+        },
+        "options": [
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": true,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": false,
+            "text": "15m",
+            "value": "15m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          }
+        ],
+        "hide": 0,
+        "description": "Zeitfenster, über das die Anfragen pro Sekunde gemittelt werden. Ein Zyklus des Collectors dauert rund 100 Sekunden, darunter schwankt die Kurve stark."
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "HVV",
+      "type": "link",
+      "url": "https://www.hvv.de",
+      "targetBlank": true,
+      "icon": "external link"
+    },
+    {
+      "title": "Pünktlichkeit S5, S7, X30, RE5, 234",
+      "type": "link",
+      "url": "/d/hvv-s5-puenktlichkeit",
+      "icon": "dashboard"
+    },
+    {
+      "title": "Netz S- und U-Bahn",
+      "type": "link",
+      "url": "/d/hvv-netz-s-u-bahn",
+      "icon": "dashboard"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Anfragen pro Sekunde (5 min)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({_value: float(v: r._value) / 300.0}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "description": "Mittel der letzten 5 Minuten, unabhängig vom gewählten Zeitraum."
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Ø Anfragen pro Sekunde",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> reduce(identity: {n: 0, t0: 2100-01-01T00:00:00Z, t1: 1970-01-01T00:00:00Z}, fn: (r, accumulator) => ({\n      n: accumulator.n + 1,\n      t0: if r._time < accumulator.t0 then r._time else accumulator.t0,\n      t1: if r._time > accumulator.t1 then r._time else accumulator.t1\n  }))\n  |> map(fn: (r) => ({_value: if r.n > 1 and r.t1 > r.t0 then float(v: r.n - 1) / (float(v: int(v: r.t1) - int(v: r.t0)) / 1000000000.0) else 0.0}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "description": "Aufrufe im gewählten Zeitraum geteilt durch die Zeit zwischen erstem und letztem Aufruf."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Anteil am Limit",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({_value: float(v: r._value) / 300.0 * 100.0}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "description": "Letzte 5 Minuten im Verhältnis zu einem Aufruf pro Sekunde."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Anfragen",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> count()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "description": "Zahl der Aufrufe im gewählten Zeitraum."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Ø Latenz",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Fehlerquote",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> map(fn: (r) => ({_time: r._time, _value: if r.status == \"ok\" then 0.0 else 100.0}))\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Anfragen pro Sekunde",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: ${fenster}, fn: count, createEmpty: true)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: r._value) / (float(v: int(v: ${fenster})) / 1000000000.0)}))\n  |> rename(columns: {_value: \"Anfragen pro Sekunde\"})\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": false,
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Aufrufe der HVV-Schnittstelle je Sekunde, gemittelt über das gewählte Fenster."
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Anfragen pro Sekunde nach Endpunkt",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group(columns: [\"endpoint\"])\n  |> aggregateWindow(every: ${fenster}, fn: count, createEmpty: true)\n  |> map(fn: (r) => ({_time: r._time, endpoint: r.endpoint, _value: float(v: r._value) / (float(v: int(v: ${fenster})) / 1000000000.0)}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 3,
+          "min": 0,
+          "displayName": "${__field.labels.endpoint}",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Gestapelt: welche GTI-Methoden die Last erzeugen."
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Latenz der Aufrufe",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: ${fenster}, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"Ø Latenz\"})\n"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> group()\n  |> aggregateWindow(every: ${fenster}, fn: max, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"Max. Latenz\"})\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "description": "Antwortzeit der GTI je Fenster."
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Aufrufe je Endpunkt",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and (r._field == \"latency_ms\" or r._field == \"bytes\"))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"endpoint\"])\n  |> reduce(\n      identity: {n: 0, err: 0, lat: 0.0, size: 0.0},\n      fn: (r, accumulator) => ({\n        n: accumulator.n + 1,\n        err: accumulator.err + (if r.status == \"ok\" then 0 else 1),\n        lat: accumulator.lat + float(v: r.latency_ms),\n        size: accumulator.size + float(v: r.bytes)\n      })\n  )\n  |> group()\n  |> map(fn: (r) => ({\n      Endpunkt: r.endpoint,\n      Anfragen: r.n,\n      \"Ø Latenz\": r.lat / float(v: r.n),\n      \"Ø Antwort\": r.size / float(v: r.n) / 1024.0,\n      Fehler: r.err\n  }))\n  |> sort(columns: [\"Anfragen\"], desc: true)\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ø Latenz"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ø Antwort"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kbytes"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Anfragen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Fehler"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Letzte fehlgeschlagene Aufrufe",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_api_request\" and r._field == \"latency_ms\")\n  |> filter(fn: (r) => r.status != \"ok\")\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 30)\n  |> map(fn: (r) => ({Zeit: r._time, Endpunkt: r.endpoint, Status: r.status, Latenz: r._value}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Latenz"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "description": "Aufrufe, deren Status nicht `ok` ist."
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "Hinweise",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Datenquelle:** Der Collector schreibt zu jedem Aufruf der Geofox-Schnittstelle (GTI) einen Punkt `hvv_api_request` (Tags `endpoint` und `status`, Felder `latency_ms` und `bytes`). *Anfragen pro Sekunde* ist die Zahl dieser Punkte je Fenster geteilt durch die Fensterlänge.\n\n**Limit:** Laut HVV führt ein Mittel von mehr als einem Aufruf pro Sekunde zu einer zeitweiligen Sperre. Der Collector hält mit `HVV_MIN_REQUEST_INTERVAL` (1,2 s) zwischen zwei Aufrufen deshalb höchstens 0,83 pro Sekunde ein; im Normalbetrieb liegt er wegen der Latenz von rund 3 s je Aufruf und der Pause zwischen den Zyklen bei etwa 0,1 bis 0,2.\n\n**Status** ist `ok`, der HTTP-Status (z. B. 403, 500), der GTI-`returnCode` oder `network` bei Verbindungsfehlern. Fehlgeschlagene Aufrufe zählen mit."
+      }
+    }
+  ]
+}

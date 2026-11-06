@@ -51,7 +51,8 @@ def cmd_departures(cfg: Config, args: argparse.Namespace) -> int:
         planned = (reference + timedelta(minutes=int(dep.get("timeOffset", 0)))).astimezone(TZ)
         flags = ("AUSFALL " if dep.get("cancelled") else "") + ("EXTRA" if dep.get("extra") else "")
         delay_min = (dep.get("delay") or 0) / 60
-        print(f"{planned:%H:%M}  {service.get('name', '?'):<6} {delay_min:+5.1f} min  {service.get('direction', '')}  {flags}")
+        note = collector.reason_fields(dep).get("reason_text")
+        print(f"{planned:%H:%M}  {service.get('name', '?'):<6} {delay_min:+5.1f} min  {service.get('direction', '')}  {flags}" + (f"  [{note}]" if note else ""))
     return 0
 
 
@@ -83,7 +84,7 @@ def cmd_probe_vehicles(cfg: Config, args: argparse.Namespace) -> int:
     if journeys:
         print(f"Bytes pro Fahrt ~{client.last_response_bytes // len(journeys)}")
     if delays:
-        print(f"realtimeDelay (s): median {statistics.median(delays)}, max {max(delays)}, Segmente mit Wert {len(delays)}")
+        print(f"realtimeDelay (min): median {statistics.median(delays)}, max {max(delays)}, Segmente mit Wert {len(delays)}")
     for vehicle_type, n in Counter(j.get("vehicleType") for j in journeys).most_common():
         print(f"  {vehicle_type:<12} {n}")
     line_filter = args.line
@@ -92,7 +93,38 @@ def cmd_probe_vehicles(cfg: Config, args: argparse.Namespace) -> int:
         print(f"Linie {line_filter}: {len(hits)} Fahrten")
         for j in hits[:10]:
             for s in j.get("segments", [])[:1]:
-                print(f"  {s.get('startStationName')} -> {s.get('endStationName')} (Ziel {s.get('destination')}), Verspaetung {s.get('realtimeDelay')} s")
+                print(f"  {s.get('startStationName')} -> {s.get('endStationName')} (Ziel {s.get('destination')}), Verspaetung {s.get('realtimeDelay')} min")
+    return 0
+
+
+def cmd_icons(cfg: Config, args: argparse.Namespace) -> int:
+    from .icons import IconStore
+
+    store = IconStore(args.dir, _client(cfg))
+    names = [x for x in args.names.split(",") if x] or None
+    done, missing = store.prefetch(names, formats=tuple(args.formats.split(",")))
+    print(f"{done} Icons geladen nach {args.dir}")
+    if missing:
+        print("Ohne Icon: " + ", ".join(missing))
+    return 0
+
+
+def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from . import web
+    from .icons import IconStore
+
+    client = _client(cfg)
+    data_dir = Path(args.data_dir)
+    bbox = tuple(float(x) for x in args.bbox.split(","))
+    types = ("S_BAHN", "U_BAHN", "R_BAHN") + (() if args.no_xbus else ("XPRESSBUS",))
+    feed = web.VehicleFeed(client, data_dir, refresh_s=args.refresh, window_s=args.window, bbox=bbox, vehicle_types=types)
+    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir)
+    stop_event = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop_event.set())
+    web.serve(app, args.host, args.port, stop_event)
     return 0
 
 
@@ -123,10 +155,28 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("probe-vehicles", help="getVehicleMap einmal abfragen und Umfang messen")
     p.add_argument("--bbox", default=HAMBURG_BBOX, help="lon1,lat1,lon2,lat2 (WGS84)")
     p.add_argument("--window", type=int, default=120, help="Zeitfenster in Sekunden ab jetzt")
-    p.add_argument("--types", default="", help="z.B. S_BAHN,U_BAHN (leer = alle)")
+    p.add_argument("--types", default="", help="z.B. S_BAHN,R_BAHN (Pflicht: ohne Typ liefert die GTI nichts)")
     p.add_argument("--line", help="Linie, deren Fahrten aufgelistet werden")
     p.add_argument("--schedule", action="store_true", help="Fahrplan- statt Echtzeitdaten")
     p.set_defaults(func=cmd_probe_vehicles)
+
+    p = sub.add_parser("icons", help="Linien-Logos vom Geofox-Icon-Service vorladen")
+    p.add_argument("--dir", default="data/icons")
+    p.add_argument("--names", default="", help="Komma-getrennte Linien, leer = alle Schienenlinien")
+    p.add_argument("--formats", default="svg", help="svg,png")
+    p.set_defaults(func=cmd_icons)
+
+    p = sub.add_parser("serve-map", help="Live-Karte mit interpolierten S-/U-Bahnen ausliefern")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8090)
+    p.add_argument("--bbox", default="8.60,53.20,10.60,53.95", help="lon1,lat1,lon2,lat2 (Standard reicht bis Cuxhaven fuer den RE5 und deckt die X-Busse im Umland ab)")
+    p.add_argument("--refresh", type=float, default=30.0, help="Sekunden zwischen GTI-Abfragen")
+    p.add_argument("--window", type=int, default=300, help="Vorausschau in Sekunden")
+    p.add_argument("--no-xbus", action="store_true", help="die X-Busse (Xpressbus) nicht abfragen und nicht auf der Karte anbieten")
+    p.add_argument("--static-dir", default="map/static")
+    p.add_argument("--data-dir", default="map/data")
+    p.add_argument("--icons-dir", default="data/icons")
+    p.set_defaults(func=cmd_serve_map)
     return parser
 
 

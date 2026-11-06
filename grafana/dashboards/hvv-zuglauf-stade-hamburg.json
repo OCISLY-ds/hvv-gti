@@ -1,0 +1,759 @@
+{
+  "uid": "hvv-zuglauf-stade-hamburg",
+  "title": "HVV Zuglauf Stade – Hamburg (RE5, S5)",
+  "description": "Wo ist welcher Zug zwischen Stade und Hamburg Hbf, und wie ändert sich seine Verspätung von Halt zu Halt.",
+  "tags": [
+    "hvv",
+    "re5",
+    "s5",
+    "oepnv"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "Europe/Berlin",
+  "refresh": "30s",
+  "time": {
+    "from": "now-90m",
+    "to": "now+90m"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "label": "Datenquelle",
+        "type": "datasource",
+        "query": "influxdb",
+        "refresh": 1,
+        "current": {
+          "selected": true,
+          "text": "HVV InfluxDB",
+          "value": "hvv-influx"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "bucket",
+        "label": "Bucket",
+        "type": "textbox",
+        "query": "hvv",
+        "current": {
+          "text": "hvv",
+          "value": "hvv"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "hvv",
+            "value": "hvv"
+          }
+        ],
+        "hide": 2
+      },
+      {
+        "name": "line",
+        "label": "Linie",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"line\", predicate: (r) => r._measurement == \"hvv_train_stop\", start: -7d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"line\", predicate: (r) => r._measurement == \"hvv_train_stop\", start: -7d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      },
+      {
+        "name": "direction",
+        "label": "Richtung",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"direction\", predicate: (r) => r._measurement == \"hvv_train_stop\", start: -7d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"direction\", predicate: (r) => r._measurement == \"hvv_train_stop\", start: -7d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Pünktlichkeit",
+      "type": "link",
+      "url": "/d/hvv-s5-puenktlichkeit",
+      "icon": "dashboard"
+    },
+    {
+      "title": "HVV",
+      "type": "link",
+      "url": "https://www.hvv.de",
+      "targetBlank": true,
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Züge unterwegs",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Aktuelle Position jedes Zuges im Korridor, berechnet aus Abschnittszeiten (keine GPS-Daten). Fortschritt: Anteil der Strecke Stade–Hamburg Hbf in Fahrtrichtung. Zeigt nur Züge, die in den letzten 5 Minuten gemeldet wurden.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"hvv_train_pos\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${line:json}) and contains(value: r.direction, set: ${direction:json}))\n  |> last()\n  |> pivot(rowKey: [\"_time\", \"journey\", \"line\", \"direction\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> map(fn: (r) => ({\n      Zug: r.train,\n      Logo: \"/public/img/hvv/\" + r.line + \".svg\", Linie: r.line,\n      Richtung: r.direction,\n      Fortschritt: if r.direction == \"Hamburg\" then r.pos / 16.0 * 100.0 else (1.0 - r.pos / 16.0) * 100.0,\n      Zustand: r.state,\n      Ort: r.where,\n      \"Nächster Halt\": r.next,\n      Ankunft: time(v: r.next_eta * 1000000000),\n      \"Verspätung\": if exists r.delay_min then float(v: r.delay_min) else 0.0\n  }))\n  |> sort(columns: [\"Linie\", \"Richtung\", \"Fortschritt\"], desc: true)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Fortschritt"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ankunft"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time: HH:mm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verspätung"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: min"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 3
+                    },
+                    {
+                      "color": "orange",
+                      "value": 6
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Logo"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "alt": "Linie",
+                  "title": "Linie"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 64
+              },
+              {
+                "id": "displayName",
+                "value": " "
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Logo": 0,
+              "Linie": 1
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Bildfahrplan: Zeit und Ort jedes Zuges",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Jede Linie ist ein Zug: waagerecht die Zeit (voraussichtlich, inklusive Verspätung), senkrecht der Halt. Die Gegenwart liegt in der Mitte des Zeitbereichs. Steigende Linie = Richtung Hamburg, fallende = Richtung Stade.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 14,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_train_stop\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${line:json}) and contains(value: r.direction, set: ${direction:json}))\n  |> filter(fn: (r) => r._field == \"actual\" or r._field == \"idx\" or r._field == \"train\")\n  |> pivot(rowKey: [\"_time\", \"journey\", \"line\", \"direction\", \"station\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> map(fn: (r) => ({_time: time(v: r.actual * 1000000000), _value: r.idx, train: r.train + \" \" + r.direction}))\n  |> group(columns: [\"train\"])\n  |> sort(columns: [\"_time\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels.train}",
+          "min": 0,
+          "max": 16,
+          "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Stade",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Dollern",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Horneburg",
+                  "index": 2
+                },
+                "3": {
+                  "text": "Neukloster",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Buxtehude",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Neu Wulmstorf",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Fischbek",
+                  "index": 6
+                },
+                "7": {
+                  "text": "Neugraben",
+                  "index": 7
+                },
+                "8": {
+                  "text": "Neuwiedenthal",
+                  "index": 8
+                },
+                "9": {
+                  "text": "Heimfeld (TU Hamburg)",
+                  "index": 9
+                },
+                "10": {
+                  "text": "Harburg Rathaus",
+                  "index": 10
+                },
+                "11": {
+                  "text": "Harburg",
+                  "index": 11
+                },
+                "12": {
+                  "text": "Wilhelmsburg",
+                  "index": 12
+                },
+                "13": {
+                  "text": "Veddel (BallinStadt)",
+                  "index": 13
+                },
+                "14": {
+                  "text": "Elbbrücken",
+                  "index": 14
+                },
+                "15": {
+                  "text": "Hammerbrook (City Süd)",
+                  "index": 15
+                },
+                "16": {
+                  "text": "Hamburg Hbf",
+                  "index": 16
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 5,
+            "spanNulls": true,
+            "axisPlacement": "left",
+            "axisLabel": "Halt",
+            "axisSoftMin": 0,
+            "axisSoftMax": 16
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "trend",
+      "title": "Verspätung entlang der Strecke",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Je Zug die gemeldete Verspätung an jedem Halt (Minuten). 0 = Stade, 16 = Hamburg Hbf; die Haltestellen stehen unter dem Diagramm in der Tabelle darunter. Steigt die Linie, nimmt die Verspätung unterwegs zu.",
+      "gridPos": {
+        "x": 14,
+        "y": 8,
+        "w": 10,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_train_stop\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${line:json}) and contains(value: r.direction, set: ${direction:json}))\n  |> filter(fn: (r) => r._field == \"delay_min\" or r._field == \"idx\" or r._field == \"train\")\n  |> pivot(rowKey: [\"_time\", \"journey\", \"line\", \"direction\", \"station\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => exists r.delay_min)\n  |> map(fn: (r) => ({idx: r.idx, delay_min: r.delay_min, train: r.train + \" \" + r.direction}))\n  |> pivot(rowKey: [\"idx\"], columnKey: [\"train\"], valueColumn: \"delay_min\")\n  |> sort(columns: [\"idx\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 5,
+            "spanNulls": true,
+            "axisLabel": "Verspätung"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "idx"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Stade",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "Dollern",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "Horneburg",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "Neukloster",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "Buxtehude",
+                        "index": 4
+                      },
+                      "5": {
+                        "text": "Neu Wulmstorf",
+                        "index": 5
+                      },
+                      "6": {
+                        "text": "Fischbek",
+                        "index": 6
+                      },
+                      "7": {
+                        "text": "Neugraben",
+                        "index": 7
+                      },
+                      "8": {
+                        "text": "Neuwiedenthal",
+                        "index": 8
+                      },
+                      "9": {
+                        "text": "Heimfeld (TU Hamburg)",
+                        "index": 9
+                      },
+                      "10": {
+                        "text": "Harburg Rathaus",
+                        "index": 10
+                      },
+                      "11": {
+                        "text": "Harburg",
+                        "index": 11
+                      },
+                      "12": {
+                        "text": "Wilhelmsburg",
+                        "index": 12
+                      },
+                      "13": {
+                        "text": "Veddel (BallinStadt)",
+                        "index": 13
+                      },
+                      "14": {
+                        "text": "Elbbrücken",
+                        "index": 14
+                      },
+                      "15": {
+                        "text": "Hammerbrook (City Süd)",
+                        "index": 15
+                      },
+                      "16": {
+                        "text": "Hamburg Hbf",
+                        "index": 16
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Halt (0 = Stade)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "idx",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Verspätung je Zug und Halt",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Verspätung in Minuten, wie sie zuletzt für den jeweiligen Halt gemeldet wurde. Liest man eine Zeile von links nach rechts (Richtung Hamburg) bzw. von rechts nach links (Richtung Stade), sieht man, wie die Verspätung des Zuges zu- oder abnimmt. Leere Zellen: der Zug hält dort nicht.",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_train_stop\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${line:json}) and contains(value: r.direction, set: ${direction:json}))\n  |> filter(fn: (r) => r._field == \"delay_min\" or r._field == \"train\")\n  |> pivot(rowKey: [\"_time\", \"journey\", \"line\", \"direction\", \"station\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> filter(fn: (r) => exists r.delay_min)\n  |> map(fn: (r) => ({Zug: r.train, Richtung: r.direction, station: r.station, delay_min: r.delay_min}))\n  |> pivot(rowKey: [\"Zug\", \"Richtung\"], columnKey: [\"station\"], valueColumn: \"delay_min\")\n  |> sort(columns: [\"Zug\"])"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Zug": 0,
+              "Richtung": 1,
+              "Stade": 2,
+              "Dollern": 3,
+              "Horneburg": 4,
+              "Neukloster": 5,
+              "Buxtehude": 6,
+              "Neu Wulmstorf": 7,
+              "Fischbek": 8,
+              "Neugraben": 9,
+              "Neuwiedenthal": 10,
+              "Heimfeld (TU Hamburg)": 11,
+              "Harburg Rathaus": 12,
+              "Harburg": 13,
+              "Wilhelmsburg": 14,
+              "Veddel (BallinStadt)": 15,
+              "Elbbrücken": 16,
+              "Hammerbrook (City Süd)": 17,
+              "Hamburg Hbf": 18
+            },
+            "renameByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "decimals": 0,
+          "custom": {
+            "align": "center",
+            "cellOptions": {
+              "type": "color-background",
+              "mode": "basic"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Zug"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Richtung"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "title": "Hinweise",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Zuglauf Stade – Hamburg** für **RE5** und **S5**. Datenquelle: Geofox-GTI-Funktion `getVehicleMap` des [HVV](https://www.hvv.de), alle 30 Sekunden abgefragt. Sie liefert je Fahrt alle Abschnitte mit planmäßiger Verspätung (ganze Minuten) und gibt jeder Fahrt eine eigene ID, daher lassen sich einzelne Züge über die ganze Strecke verfolgen.\n\nDie Position in *Züge unterwegs* ist **berechnet**: Aus den Abschnittszeiten (Abfahrt und Ankunft jedes Abschnitts, Verspätung eingerechnet) wird die Stelle zwischen zwei Halten interpoliert. Es gibt keine GPS-Daten. Der Verlauf umfasst die Haltestellen im Korridor; die S5 fährt derzeit geteilt (Zugwechsel in Neugraben), die Linien tauchen nur auf, solange sie im Zeitfenster von 90 Minuten vor bis 90 Minuten nach jetzt liegen. Für ältere Züge bleibt die zuletzt gemeldete Verspätung je Halt gespeichert."
+      }
+    }
+  ]
+}

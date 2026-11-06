@@ -16,7 +16,7 @@ Ein echter `getVehicleMap`-Aufruf wurde am 19.10.2026 gegen den GTI-Account des 
 ## Was die API liefert
 
 - `getVehicleMap`: Eingabe sind Bounding-Box (WGS84), Zeitfenster (`periodBegin`/`periodEnd`, Unix-Sekunden), `realtime`, `withoutCoords` und optional `vehicleTypes` (`S_BAHN`, `U_BAHN`, `METROBUS`, `REGIONALBUS`, `SCHIFF` usw.).
-  Ausgabe sind `journeys`: je Fahrt `journeyID`, `line`, `vehicleType`, `realtime` und `segments`. Ein Segment hat `startStationName/-Key`, `startDateTime`, `endStationName/-Key`, `endDateTime`, `destination`, `realtimeDelay` (Sekunden) und optional `track` (Polylinie).
+  Ausgabe sind `journeys`: je Fahrt `journeyID`, `line`, `vehicleType`, `realtime` und `segments`. Ein Segment hat `startStationName/-Key`, `startDateTime`, `endStationName/-Key`, `endDateTime`, `destination`, `realtimeDelay` (**Minuten**, siehe „Messung 20.10.2026“) und optional `track` (Polylinie).
 - `getTrackCoordinates`: liefert die Polylinien (`tracks`) zu Haltepunkt-Paaren. Sie sind statisch und lassen sich dauerhaft zwischenspeichern.
 - Mit `withoutCoords=true` bleibt die Antwort klein; die Polylinien holt man einmalig separat. Das Projekt HVVMap hat `getVehicleMap` nach eigener Aussage wegen der Anzahl der Requests wieder entfernt und kommt mit Minutengenauigkeit aus. Das passt zu der Einschätzung hier.
 
@@ -30,22 +30,35 @@ Ein echter `getVehicleMap`-Aufruf wurde am 19.10.2026 gegen den GTI-Account des 
 | Latenz | 3,2 s (alle GTI-Aufrufe brauchen etwa 3 s) |
 | Größe | 48 KiB entpackt, rund 830 Byte pro Fahrt |
 | Umfang | 59 S-Bahn-Fahrten mit 93 Segmenten, alle mit Echtzeit (`realtime=true`) |
-| `realtimeDelay` | Median 0 s, Maximum 10 s (zu ruhige Stichprobe, um mehr zu sagen) |
+| `realtimeDelay` | Median 0, Maximum 10 (zu ruhige Stichprobe; Einheit Minuten, nicht Sekunden, siehe unten) |
 | Linie S5 | 12 Fahrten gleichzeitig, jeweils Ziel Neugraben oder Elbgaustraße |
 
 Folgerungen: Die Antwortgröße ist unkritisch (bei 30 s Abstand rund 140 MB Transfer pro Tag). Die Latenz heißt, dass ein Abruf ein paar Sekunden dauert und nicht mehr als alle 15 bis 30 s sinnvoll ist. Die Standard-Bounding-Box endet östlich von Stade; für den Stade-Zweig muss sie nach Westen erweitert werden (`--bbox 9.40,53.35,10.35,53.75`).
 
+### Messung 20.10.2026: Einheit und Zeitbezug
+
+Bei verspäteten Zügen (darunter ein RE5 mit über 30 Minuten) wurden die Segmentzeiten mit der Abfahrtstafel (`departureList`, Planzeit plus `delay`) verglichen. Das Ergebnis, bei 8 von 9 Vergleichen übereinstimmend:
+
+- `realtimeDelay` ist in **Minuten** (die Tafel liefert `delay` in Sekunden).
+- `startDateTime`/`endDateTime` **enthalten die Verspätung bereits**: Planzeit = `startDateTime - realtimeDelay * 60`. Die Verspätung darf also nicht noch einmal aufaddiert werden.
+- `journeyID` ist innerhalb eines Abrufs eindeutig, bei gleichem Zeitfenster auch über Abrufe stabil (24 von 24 Fahrten bei zwei Abrufen im Abstand von 2 Minuten). **Bei gleitendem Zeitfenster ist sie es nicht** (Messung 05.11.2026, Abrufe im Abstand von 30 s): Die Zähler im Suffix (`subline`, `sdIndex`, `Fahrt`) beziehen sich auf das Fenster; nur 69 % der Fahrten behielten ihre ID, die übrigen wurden umbenannt oder bekamen die ID des Zuges davor/dahinter. Außerdem erscheinen rund 7 % der Fahrten doppelt unter zwei IDs mit identischen Abschnitten. Eine Fahrt erkennt man stattdessen an Linie, Haltepunktpaar und planmäßiger Startzeit der Abschnitte (siehe `TripIds` in `hvv_gti/web.py`). Mit der `serviceId` der Abfahrtstafel ist die ID nicht identisch.
+- Mit einem Zeitfenster von 90 Minuten zurück und voraus liefert `getVehicleMap` je Fahrt alle Abschnitte (bis zu 43 bei der U-Bahn); die Zeilen `line.origin` und `line.direction` nennen Ursprung und Ziel. Über alle vier Fahrzeugarten sind das rund 1,9 MB ohne Koordinaten (4,6 s), deshalb holt die Karte diesen Abruf nur bei einem Klick auf einen Zug und cacht ihn.
+- Ein weites Zeitfenster (90 Minuten zurück bis 90 Minuten voraus) liefert ganze Fahrten mit allen Abschnitten, auch den noch bevorstehenden; ein 2-Minuten-Fenster nur die gerade fahrenden Abschnitte.
+- `vehicleTypes` ist Pflicht: ohne den Parameter kommt nur `{"returnCode":"OK"}`, `R_BAHN` liefert den RE5, `S_BAHN` die S5, `ZUG` ergibt HTTP 400.
+- Für die S5 fehlt der Abschnitt Stade – Dollern in der Antwort: Züge Richtung Neugraben beginnen in Dollern, Züge Richtung Stade enden dort. Auch mit größerer Bounding-Box und `withoutCoords=false` ändert sich das nicht.
+
+Umgesetzt ist das im Collector als Zuglauf Stade – Hamburg (`hvv_gti/trains.py`, Dashboard `hvv-zuglauf-stade-hamburg`).
+
 ### Noch offen
 
-1. **Enthalten `startDateTime`/`endDateTime` die Verspätung schon, oder muss `realtimeDelay` addiert werden?** Die Stichprobe hatte nur Verspätungen bis 10 s. Zum Klären bei einem Zug mit mehreren Minuten Verspätung (siehe Dashboard) `probe-vehicles --line S5` wiederholen und die Segmentzeiten mit der Abfahrtstafel vergleichen.
-2. **Echtzeit-Anteil bei Bussen** (die S-Bahn ist zu 100 % echtzeitfähig, Busse nicht zwingend): `probe-vehicles --types METROBUS`. Die Abfahrtstafel liefert für einzelne Busfahrten keinen `delay`-Wert (im Trockenlauf vom 19.10.2026 2 von 22 Zeilen, beide beim Ersatzbus S7-SEV). Der Collector erfasst das als fehlenden Wert (siehe README).
-3. **Verhalten bei Störungen**, wenn Fahrten ausfallen oder Echtzeit abreißt.
+1. **Echtzeit-Anteil bei Bussen** (die S-Bahn ist zu 100 % echtzeitfähig, Busse nicht zwingend): `probe-vehicles --types METROBUS`. Die Abfahrtstafel liefert für einzelne Busfahrten keinen `delay`-Wert (im Trockenlauf vom 19.10.2026 2 von 22 Zeilen, beide beim Ersatzbus S7-SEV). Der Collector erfasst das als fehlenden Wert (siehe README).
+2. **Verhalten bei Störungen**, wenn Fahrten ausfallen oder Echtzeit abreißt.
 
 ## Positionsberechnung
 
 Für jede Fahrt zum Zeitpunkt *t*:
 
-1. Segment finden mit `start + delay <= t <= end + delay` (siehe „Noch offen“, Punkt 1).
+1. Segment finden mit `start <= t < end` (die Zeiten enthalten die Verspätung schon).
 2. Anteil `f = (t - start) / (end - start)` bilden.
 3. Entlang der Polylinie des Segments den Punkt bei `f * Länge` bestimmen (Haversine oder lokale Ebene).
 4. Zwischen zwei Segmenten (Halt am Bahnsteig) die Position des Halts verwenden.
@@ -75,7 +88,7 @@ Je Fahrzeug fällt dabei nur eine Handvoll Arithmetik an. Der Rechenaufwand ist 
 
 ## Rate-Limit und Rechenbeispiel
 
-Der Collector für die Pünktlichkeit nutzt bei 60 s Intervall und zwei Haltestellen mit Abfahrten und Ankünften 4 Aufrufe pro Minute (rund 0,07 pro Sekunde). `HVV_MIN_REQUEST_INTERVAL=1.2` ist ein harter Abstand zwischen zwei Aufrufen, auch für künftige Befehle. Eine Live-Karte mit einem Abruf alle 30 s kommt mit 2 Aufrufen pro Minute dazu. Beides zusammen liegt bei unter 0,1 Aufruf pro Sekunde.
+Stand 28.10.2026 fragt der Collector je Zyklus 9 `departureList`, 2 `getVehicleMap` für den Zuglauf, 1 `getVehicleMap` für das ganze S- und U-Bahn-Netz und alle 5 Zyklen `getAnnouncements` ab. Das sind etwa 11 Aufrufe in ~34 s plus 60 s Pause, im Schnitt rund 0,12 Aufrufe pro Sekunde (gemessen wird das im Dashboard *HVV API-Nutzung*, Messung `hvv_api_request`). Das ganze S- und U-Bahn-Netz kostet dabei nur einen Aufruf pro Zyklus, weil `getVehicleMap` alle Fahrten im Rechteck liefert; Abfahrtstafeln für die rund 150 Stationen einzeln wären über 100 Aufrufe je Zyklus gewesen. Frühere Rechnung: 2 Haltestellen mit Abfahrten und Ankünften waren 4 Aufrufe pro Minute (rund 0,07 pro Sekunde). `HVV_MIN_REQUEST_INTERVAL=1.2` ist ein harter Abstand zwischen zwei Aufrufen, auch für künftige Befehle. Eine Live-Karte mit einem Abruf alle 30 s kommt mit 2 Aufrufen pro Minute dazu. Beides zusammen liegt bei unter 0,1 Aufruf pro Sekunde.
 Mehrere Browser-Tabs dürfen nie je einen eigenen API-Abruf auslösen. Der Abruf gehört in den Collector, die Browser lesen nur dessen Ergebnis.
 
 ## Nutzungsbedingungen

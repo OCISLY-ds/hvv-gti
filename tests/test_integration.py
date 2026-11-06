@@ -17,8 +17,8 @@ STADE = {"id": "Master:80900", "type": "STATION", "name": "Stade", "city": "Stad
 HBF = {"id": "Master:9910", "type": "STATION", "name": "Hauptbahnhof", "city": "Hamburg", "combinedName": "Hamburg Hbf"}
 
 
-STADE_ROUTE = Route("S5 Stade", "S5", "SBAHN", "Stade", STADE["id"], directions=("Stade",))
-HBF_ROUTE = Route("S5 Hbf", "S5", "SBAHN", "Hauptbahnhof", HBF["id"])
+STADE_ROUTE = Route("S5 Stade", "S5", "SBAHN", "Stade", STADE["id"], "Nach Stade", directions=("Stade",))
+HBF_ROUTE = Route("S5 Hbf", "S5", "SBAHN", "Hauptbahnhof", HBF["id"], "Sonst")
 TEST_ROUTES = (STADE_ROUTE, HBF_ROUTE)
 
 
@@ -146,6 +146,8 @@ class ParseEventsTest(unittest.TestCase):
         self.assertIn("extra=1i", lines[2])
         self.assertIn("line=S5", lines[0])
         self.assertIn("route=S5\\ Stade", lines[0])
+        self.assertIn("direction=Nach\\ Stade", lines[0])
+        self.assertIn("service_id=1004i", lines[0])
         self.assertIn("kind=departure", lines[0])
         self.assertIn("station=Stade", lines[0])
 
@@ -153,8 +155,9 @@ class ParseEventsTest(unittest.TestCase):
         d = departure("S5", 1, 0)
         d["line"].pop("direction")
         d["line"]["origin"] = ""
-        line = self.parse([d], routes=(Route("alle", "S5", "SBAHN", "Stade", STADE["id"]),))[0]
-        self.assertIn("direction=-", line)
+        line = self.parse([d], routes=(Route("alle", "S5", "SBAHN", "Stade", STADE["id"], "alle"),))[0]
+        self.assertIn("destination=-", line)
+        self.assertIn("direction=alle", line)
         self.assertIn("origin=-", line)
 
     def test_missing_delay_has_no_delay_field(self):
@@ -175,29 +178,58 @@ class ParseEventsTest(unittest.TestCase):
 
     def test_first_matching_route_wins_and_empty_directions_catch_all(self):
         routes = (
-            Route("nach Aumuehle", "S7", "SBAHN", "Stade", STADE["id"], directions=("Aumühle",)),
-            Route("nach Hamburg", "S7", "SBAHN", "Stade", STADE["id"]),
+            Route("S7", "S7", "SBAHN", "Stade", STADE["id"], "Aumühle", directions=("Aumühle",)),
+            Route("S7", "S7", "SBAHN", "Stade", STADE["id"], "Hamburg"),
         )
         lines = self.parse(
             [departure("S7", 1, 0, direction="Aumühle"), departure("S7", 2, 0, direction="Hamburg Hbf")], routes=routes
         )
-        self.assertIn("route=nach\\ Aumuehle", lines[0])
-        self.assertIn("route=nach\\ Hamburg", lines[1])
+        self.assertIn("route=S7,", lines[0] + ",")
+        self.assertIn("direction=Aumühle", lines[0])
+        self.assertIn("direction=Hamburg", lines[1])
+        self.assertIn("destination=Hamburg\\ Hbf", lines[1])
 
     def test_direction_match_is_case_insensitive_substring(self):
-        routes = (Route("x", "S5", "SBAHN", "Stade", STADE["id"], directions=("elbgaustra",)),)
+        routes = (Route("x", "S5", "SBAHN", "Stade", STADE["id"], "E", directions=("elbgaustra",)),)
         self.assertEqual(len(self.parse([departure("S5", 1, 0, direction="Elbgaustraße")], routes=routes)), 1)
 
-    def test_unmatched_direction_is_kept_under_generated_route_and_warned_once(self):
+    def test_unmatched_direction_is_kept_under_the_line_and_warned_once(self):
         unmatched: set = set()
         with self.assertLogs("hvv_gti.collector", level="WARNING") as logs:
             first = self.parse([departure("S5", 1, 0, direction="Hamburg Hbf")], unmatched=unmatched)
             self.parse([departure("S5", 2, 0, direction="Hamburg Hbf")], unmatched=unmatched)
-        self.assertIn("route=S5\\ Stade\\ →\\ Hamburg\\ Hbf", first[0])
+        self.assertIn("route=S5\\ Stade", first[0])
+        self.assertIn("direction=Hamburg\\ Hbf", first[0])
+        self.assertIn("destination=Hamburg\\ Hbf", first[0])
         self.assertEqual(len(logs.records), 1)
 
     def test_same_line_in_other_group_without_route_is_ignored(self):
         self.assertEqual(self.parse([departure("X30", 1, 0)]), [])
+
+    def test_attributes_become_reason_fields(self):
+        jam = {"isPlanned": False, "value": "Prognose ungenau - Fahrzeug im Stau", "types": ["REALTIME", "TRAFFIC_JAM"]}
+        tech = {"isPlanned": False, "value": "Technische Störung", "types": ["TECHNICAL_PROBLEM"]}
+        line = self.parse([departure("S5", 3, 0, attributes=[jam, tech, dict(jam)])])[0]
+        self.assertIn('reason_types="REALTIME,TRAFFIC_JAM,TECHNICAL_PROBLEM"', line)
+        self.assertIn('reason_text="Prognose ungenau - Fahrzeug im Stau | Technische Störung"', line)
+
+    def test_plain_line_info_is_no_reason(self):
+        info = {"isPlanned": True, "value": "Nach 19 Uhr Ausstieg zwischen den Haltestellen", "types": ["NORMAL"]}
+        for attributes in ([info], [], None):
+            line = self.parse([departure("S5", 3, 0, attributes=attributes)])[0]
+            self.assertNotIn("reason_", line)
+
+    def test_reason_is_a_field_not_a_tag(self):
+        jam = {"value": "Fahrzeug im Stau", "types": ["TRAFFIC_JAM"]}
+        plain = self.parse([departure("S5", 3, 0)])[0]
+        with_reason = self.parse([departure("S5", 3, 0, attributes=[jam])])[0]
+        series = lambda line: line.split(" ", 1)[0]
+        self.assertEqual(series(plain), series(with_reason))  # gleiche Serie, sonst wuerde die Abfahrt doppelt gezaehlt
+
+    def test_attribute_without_types_or_value(self):
+        line = self.parse([departure("S5", 3, 0, attributes=[{"title": "Hinweis"}, {"types": ["TRAFFIC_JAM"]}])])[0]
+        self.assertIn('reason_text="Hinweis"', line)
+        self.assertIn('reason_types="TRAFFIC_JAM"', line)
 
 
 def by_group(table):
@@ -256,16 +288,18 @@ class CollectTest(unittest.TestCase):
         routes = ROUTES
         with FakeGti(responses=gti_responses([])) as gti:
             stops = collector.resolve_stops(client_for(gti), routes)
-        self.assertEqual(set(stops), {"Stade", "Neugraben", "Hauptbahnhof", "Bergedorf", "Harburg Rathaus"})
+        self.assertEqual(set(stops), {"Stade", "Neugraben", "Hauptbahnhof", "Bergedorf", "Harburg Rathaus", "Rathausmarkt"})
 
     def test_group_routes_one_request_per_station_and_service_type(self):
         groups = collector.group_routes(ROUTES)
         keys = [key for key, _ in groups]
-        self.assertEqual(len(groups), 7)
-        self.assertEqual(len(set(keys)), 7)
+        self.assertEqual(len(groups), 9)
+        self.assertEqual(len(set(keys)), 9)
         self.assertIn(("Bergedorf", "Master:25950", "BUS"), keys)
         self.assertIn(("Bergedorf", "Master:25950", "XPRESSBUS"), keys)
         self.assertIn(("Harburg Rathaus", "Master:40950", "XPRESSBUS"), keys)
+        self.assertIn(("Rathausmarkt", "Master:11003", "BUS"), keys)
+        self.assertIn(("Stade", "Master:8000089", "ZUG"), keys)
 
     def test_collect_once_real_routes(self):
         table = {
@@ -278,11 +312,25 @@ class CollectTest(unittest.TestCase):
             ("Master:25950", "SBAHN"): [departure("S7", 8, 0, direction="Aumühle")],
             ("Master:25950", "BUS"): [
                 departure("S7-SEV", 9, None, direction="U S Berliner Tor (Beim Strohhause)"),
+                departure("234", 9, 60, direction="Fanny-Lewald-Ring"),
+                departure("234", 10, 0, direction="S Nettelnburg"),
                 departure("X30", 10, 0, direction="S Harburg Rathaus (Hölertwiete)"),  # gehoert zur XPRESSBUS-Abfrage
                 departure("113", 11, 0),
             ],
+            ("Master:11003", "BUS"): [
+                departure("4", 5, 0, direction="Osakaallee (Überseequartier)"),
+                departure("4", 6, 120, direction="Wildacker"),
+                departure("4", 7, 0, direction="Langenfelder Damm"),
+                departure("5", 7, 0),
+            ],
             ("Master:25950", "XPRESSBUS"): [departure("X30", 10, 60, direction="S Harburg Rathaus (Hölertwiete)")],
             ("Master:40950", "XPRESSBUS"): [departure("X30", 12, 0, direction="Bf. Bergedorf")],
+            ("Master:8000089", "ZUG"): [
+                departure("RE4", 14, 0),
+                departure("RE5", 15, 0, direction="Cuxhaven"),
+                departure("RE5", 16, 120, direction="Hamburg Hbf"),
+                departure("RE5", 17, 1680, direction="Hamburg-Harburg"),
+            ],
         }
         cfg = Config(min_request_interval=0)
         with FakeGti(responses={"departureList": by_group(table)}) as gti:
@@ -290,20 +338,31 @@ class CollectTest(unittest.TestCase):
             stops = {name: collector.Stop(name, {"id": sid}) for name, sid in {(r.station, r.station_id) for r in cfg.routes}}
             lines = collector.collect_once(client, stops, cfg, now=NOW)
         requests = [r[1] for r in gti.requests if r[0].endswith("departureList")]
-        self.assertEqual(len(requests), 7)
+        self.assertEqual(len(requests), 9)
         self.assertEqual({r["maxList"] for r in requests if r["serviceTypes"] == ["BUS"]}, {120})
-        routes = [re.search(r"route=((?:\\.|[^, ])+)", l).group(1) for l in lines]
+        def tag(name, line):
+            return re.search(rf"[, ]{name}=((?:\\.|[^, ])+)", line).group(1)
+
+        routes = [(tag("route", l), tag("direction", l)) for l in lines]
         self.assertEqual(
             routes,
             [
-                "S5\\ Stade\\ →\\ Neugraben",
-                "S5\\ Neugraben\\ →\\ Stade",
-                "S5\\ Neugraben\\ →\\ Elbgaustraße",
-                "S5\\ Elbgaustraße\\ →\\ Neugraben",
-                "S7\\ Bergedorf\\ →\\ Aumühle",
-                "S7\\ Bergedorf\\ →\\ Hamburg",
-                "X30\\ Bergedorf\\ →\\ Harburg",
-                "X30\\ Harburg\\ →\\ Bergedorf",
+                ("S5", "Neugraben"),
+                ("S5", "Stade"),
+                ("S5", "Elbgaustraße"),
+                ("S5", "Neugraben"),
+                ("S7", "Aumühle"),
+                ("S7", "Hamburg"),
+                ("234", "Leuschnerstraße"),
+                ("234", "Leuschnerstraße"),
+                ("X30", "Harburg"),
+                ("X30", "Bergedorf"),
+                ("4", "Überseequartier"),
+                ("4", "Eidelstedt"),
+                ("4", "Eidelstedt"),
+                ("RE5", "Cuxhaven"),
+                ("RE5", "Hamburg"),
+                ("RE5", "Hamburg"),
             ],
         )
         sev = next(l for l in lines if "line=S7-SEV" in l)
@@ -383,9 +442,12 @@ class RunTest(unittest.TestCase):
         self.assertIn("bucket=hvv", path)
         self.assertIn("precision=ns", path)
         self.assertEqual(auth, "Token tok")
-        self.assertEqual(len(body.splitlines()), 6)  # 3 S5-Messpunkte x (Abfahrt + Ankunft)
-        self.assertIn("hvv_stop_event,", body)
+        events = [l for l in body.splitlines() if l.startswith("hvv_stop_event,")]
+        self.assertEqual(len(events), 6)  # 3 S5-Messpunkte x (Abfahrt + Ankunft)
         self.assertIn("route=", body)
+        usage = [l for l in body.splitlines() if l.startswith("hvv_api_request,")]
+        self.assertEqual(len(usage), len(gti.requests))
+        self.assertIn("endpoint=departureList,status=ok", body)
 
     def test_run_once_reports_failure_exit_code(self):
         responses = gti_responses([departure("S5", 2, 0)])

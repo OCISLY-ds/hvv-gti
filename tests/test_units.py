@@ -45,7 +45,7 @@ class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         cfg = Config.from_env({})
         self.assertEqual(cfg.routes, ROUTES)
-        self.assertEqual({r.line for r in cfg.routes}, {"S5", "S7", "S7-SEV", "X30"})
+        self.assertEqual({r.line for r in cfg.routes}, {"S5", "S7", "S7-SEV", "X30", "234", "4", "RE5"})
         self.assertFalse(cfg.collect_arrivals)
 
     def test_overrides_and_bool(self):
@@ -92,11 +92,24 @@ class RoutesTest(unittest.TestCase):
                 seen_catch_all.add(key)
 
     def test_routes_cover_requested_lines(self):
-        names = {r.name for r in ROUTES}
-        self.assertIn("S5 Stade → Neugraben", names)
-        self.assertIn("S7 Bergedorf → Hamburg", names)
-        self.assertIn("X30 Bergedorf → Harburg", names)
-        self.assertIn("X30 Harburg → Bergedorf", names)
+        pairs = {(r.name, r.heading) for r in ROUTES}
+        for pair in [
+            ("S5", "Neugraben"),
+            ("S5", "Stade"),
+            ("S7", "Aumühle"),
+            ("S7", "Hamburg"),
+            ("X30", "Harburg"),
+            ("X30", "Bergedorf"),
+            ("234", "Leuschnerstraße"),
+            ("4", "Überseequartier"),
+            ("4", "Eidelstedt"),
+            ("RE5", "Hamburg"),
+            ("RE5", "Cuxhaven"),
+        ]:
+            self.assertIn(pair, pairs)
+
+    def test_route_is_the_line_not_a_connection(self):
+        self.assertTrue(all("→" not in r.name for r in ROUTES))
 
 
 class DotenvTest(unittest.TestCase):

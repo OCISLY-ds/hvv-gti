@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 *.swp
 *.swo
+data/
+map/data/
+map/tiles/work/

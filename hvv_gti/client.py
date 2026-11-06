@@ -3,14 +3,18 @@ import gzip
 import hashlib
 import hmac
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Europe/Berlin")
+# Soviele unverschickte Protokolleintraege bleiben hoechstens im Speicher (Influx lange nicht erreichbar).
+MAX_CALL_LOG = 5000
 
 
 class GtiError(Exception):
@@ -25,6 +29,17 @@ class GtiAuthError(GtiError):
 
 class GtiPermissionError(GtiError):
     """Zugang gueltig, aber die Methode ist fuer den Account nicht freigeschaltet."""
+
+
+@dataclass(frozen=True)
+class ApiCall:
+    """Ein GTI-Aufruf fuer die Auslastungsstatistik. `status` ist "ok", der HTTP-Status, der GTI-returnCode oder "network"."""
+
+    endpoint: str
+    started_ns: int
+    latency_s: float
+    response_bytes: int
+    status: str
 
 
 def sign(password: str, body: bytes) -> str:
@@ -56,6 +71,12 @@ class GtiClient:
         self._last_request = 0.0
         self.last_response_bytes = 0
         self.last_latency = 0.0
+        self.call_log: list[ApiCall] = []
+        self._lock = threading.Lock()  # die Karte ruft aus mehreren Threads auf; das Intervall gilt fuer alle zusammen
+
+    def take_calls(self) -> list[ApiCall]:
+        calls, self.call_log = self.call_log, []
+        return calls
 
     def _throttle(self) -> None:
         wait = self._last_request + self.min_interval - time.monotonic()
@@ -64,6 +85,10 @@ class GtiClient:
         self._last_request = time.monotonic()
 
     def post(self, path: str, payload: dict) -> dict:
+        with self._lock:
+            return self._post(path, payload)
+
+    def _post(self, path: str, payload: dict) -> dict:
         body = json.dumps(
             {"language": "de", "version": self.version, **payload},
             ensure_ascii=False,
@@ -85,30 +110,40 @@ class GtiClient:
             },
         )
         self._throttle()
+        started_ns = time.time_ns()
         started = time.monotonic()
+        status, size = "error", 0
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read()
-                if resp.headers.get("Content-Encoding") == "gzip":
-                    raw = gzip.decompress(raw)
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:300]
-            if exc.code == 403 and "not allowed for user" in detail:
-                cls = GtiPermissionError
-            else:
-                cls = GtiAuthError if exc.code in (401, 403) else GtiError
-            raise cls(f"HTTP {exc.code} bei {path}: {detail}", code=str(exc.code)) from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise GtiError(f"Verbindungsfehler bei {path}: {exc}") from exc
-        self.last_latency = time.monotonic() - started
-        self.last_response_bytes = len(raw)
-        data = json.loads(raw)
-        if data.get("returnCode") != "OK":
-            raise GtiError(
-                f"{path}: {data.get('returnCode')} {data.get('errorText', '')} {data.get('errorDevInfo', '')}".strip(),
-                code=data.get("returnCode"),
-            )
-        return data
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    raw = resp.read()
+                    if resp.headers.get("Content-Encoding") == "gzip":
+                        raw = gzip.decompress(raw)
+            except urllib.error.HTTPError as exc:
+                status = str(exc.code)
+                detail = exc.read().decode("utf-8", "replace")[:300]
+                if exc.code == 403 and "not allowed for user" in detail:
+                    cls = GtiPermissionError
+                else:
+                    cls = GtiAuthError if exc.code in (401, 403) else GtiError
+                raise cls(f"HTTP {exc.code} bei {path}: {detail}", code=str(exc.code)) from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                status = "network"
+                raise GtiError(f"Verbindungsfehler bei {path}: {exc}") from exc
+            self.last_latency = time.monotonic() - started
+            self.last_response_bytes = size = len(raw)
+            data = json.loads(raw)
+            if data.get("returnCode") != "OK":
+                status = str(data.get("returnCode"))
+                raise GtiError(
+                    f"{path}: {data.get('returnCode')} {data.get('errorText', '')} {data.get('errorDevInfo', '')}".strip(),
+                    code=data.get("returnCode"),
+                )
+            status = "ok"
+            return data
+        finally:
+            self.call_log.append(ApiCall(path, started_ns, time.monotonic() - started, size, status))
+            del self.call_log[:-MAX_CALL_LOG]
 
     def init(self) -> dict:
         return self.post("init", {})
@@ -138,6 +173,9 @@ class GtiClient:
         if service_types:
             payload["serviceTypes"] = service_types
         return self.post("departureList", payload)
+
+    def get_announcements(self, names: list[str]) -> dict:
+        return self.post("getAnnouncements", {"names": names, "full": True})
 
     def get_vehicle_map(
         self,
