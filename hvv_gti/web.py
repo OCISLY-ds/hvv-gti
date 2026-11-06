@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .icons import CONTENT_TYPES, IconStore
+from .geometry import clean
 from .signals import SignalIndex
 
 log = logging.getLogger("hvv_gti.web")
@@ -161,6 +162,9 @@ class VehicleFeed:
             self.tracks, self.stations = data["tracks"], data["stations"]
             self.version = self._saved_version = 1
             for track in self.tracks.values():
+                if not track.get("g"):  # aeltere Dateien: Geometrie einmalig bereinigen
+                    track["p"], track["g"] = clean(track["p"]), 1
+                    self.version = 2
                 self._sign(track)
             log.info("Gleisgeometrie geladen: %d Abschnitte, %d Haltestellen", len(self.tracks), len(self.stations))
         except (OSError, ValueError, KeyError):
@@ -176,7 +180,7 @@ class VehicleFeed:
         try:
             self.tracks_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.tracks_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"tracks": {k: {"p": t["p"], "l": t["l"]} for k, t in self.tracks.items()}, "stations": self.stations}, separators=(",", ":")), "utf-8")
+            tmp.write_text(json.dumps({"tracks": {k: {"p": t["p"], "l": t["l"], "g": 1} for k, t in self.tracks.items()}, "stations": self.stations}, separators=(",", ":")), "utf-8")
             tmp.replace(self.tracks_path)
             self._saved_version, self._saved_at = self.version, time.monotonic()
         except OSError as exc:
@@ -185,7 +189,7 @@ class VehicleFeed:
     def _remember(self, key: str, points: list[float], line: str, from_key: str, from_name: str, to_key: str, to_name: str) -> None:
         track = self.tracks.get(key)
         if track is None:
-            track = self.tracks[key] = {"p": [round(v, 5) for v in points], "l": []}
+            track = self.tracks[key] = {"p": clean(points), "g": 1, "l": []}
             self._sign(track)
             self.version += 1
         if line not in track["l"]:
