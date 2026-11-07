@@ -11,10 +11,12 @@ import mimetypes
 import re
 import threading
 import time
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
+from zoneinfo import ZoneInfo
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .icons import CONTENT_TYPES, IconStore
@@ -365,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types})
+            if path in ("/api/stations", "/api/departures", "/api/route"):
+                return self._planner(path)
             if path == "/api/colors":
                 return self._json(self.app.icons.colors())
             if path == "/healthz":
@@ -379,6 +383,38 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "GTI-Zugang abgelehnt"}, HTTPStatus.BAD_GATEWAY)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _planner(self, path: str) -> None:
+        planner = self.app.planner
+        if planner is None:
+            return self._json({"error": "Routenplaner nicht verfuegbar"}, HTTPStatus.NOT_FOUND)
+        query = parse_qs(urlsplit(self.path).query)
+        arg = lambda name: (query.get(name, [""])[0] or "").strip()
+        station = re.compile(r"^[A-Za-z0-9_.:-]{1,40}$")
+        try:
+            if path == "/api/stations":
+                text = arg("q")
+                return self._json({"stations": planner.stations(text) if len(text) >= 2 else []})
+            if path == "/api/departures":
+                if not station.match(arg("id")):
+                    return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
+                return self._json(planner.departures(arg("id"), min(40, max(1, int(arg("n") or 20)))))
+            if not (station.match(arg("from")) and station.match(arg("to"))):
+                return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
+            when = datetime.now(ZoneInfo("Europe/Berlin"))
+            if arg("when"):
+                when = datetime.fromisoformat(arg("when")).replace(tzinfo=ZoneInfo("Europe/Berlin"))
+            return self._json(planner.route(arg("from"), arg("to"), when, arg("arrive") == "1"))
+        except ValueError:
+            return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
+        except GtiAuthError:
+            raise
+        except GtiError as exc:
+            log.error("Planer: %s", exc)
+            return self._json({"error": "HVV-Schnittstelle derzeit nicht erreichbar"}, HTTPStatus.BAD_GATEWAY)
+        except OSError as exc:
+            log.error("Planer (Influx): %s", exc)
+            return self._json({"error": "Messdaten derzeit nicht erreichbar"}, HTTPStatus.BAD_GATEWAY)
 
     def _icon(self, filename: str) -> None:
         name, _, fmt = filename.rpartition(".")
@@ -442,8 +478,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class MapApp:
-    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path):
-        self.feed, self.icons, self.static_dir, self.data_dir = feed, icons, static_dir, data_dir
+    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path, planner=None):
+        self.feed, self.icons, self.static_dir, self.data_dir, self.planner = feed, icons, static_dir, data_dir, planner
 
     def tiles_file(self) -> Path:
         return self.data_dir / "hamburg.pmtiles"

@@ -428,9 +428,9 @@ function updateBusyBlocks(entries) {
 function stationGeoJson() {
   return {
     type: "FeatureCollection",
-    features: Object.values(stations)
-      .filter((s) => s.l.some(isShown))
-      .map((s) => ({ type: "Feature", properties: { n: s.n, b: s.l.every(isX) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.x, s.y] } })),
+    features: Object.entries(stations)
+      .filter(([, s]) => s.l.some(isShown))
+      .map(([k, s]) => ({ type: "Feature", properties: { k, n: s.n, b: s.l.every(isX) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.x, s.y] } })),
   };
 }
 
@@ -947,6 +947,8 @@ async function main() {
   }
   map = new maplibregl.Map({ container: "map", style, center: HAMBURG, zoom: 10.5, minZoom: 8, attributionControl: { compact: true } });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  window.hvvMap = map;
+  window.hvvColorOf = colorOf;
 
   await new Promise((r) => map.on("load", r));
   const empty = { type: "FeatureCollection", features: [] };
@@ -1032,10 +1034,18 @@ async function main() {
     const r = matchMedia("(pointer: coarse)").matches ? 16 : 5; // Finger treffen ungenauer als eine Maus
     const box = [[ev.point.x - r, ev.point.y - r], [ev.point.x + r, ev.point.y + r]];
     const hit = map.queryRenderedFeatures(box, { layers: trainLayers })[0];
-    if (hit) showPopup(hit.properties.id, ev.lngLat);
-    else if (sel && sel.sheet) popup.remove(); // die Karte schliesst sich nicht selbst per Tipp (closeOnClick aus)
+    if (hit) return showPopup(hit.properties.id, ev.lngLat);
+    // kein Zug getroffen: Klick auf eine Haltestelle zeigt die naechsten Abfahrten
+    const stop = map.queryRenderedFeatures(box, { layers: ["stations"] })[0];
+    if (stop && stop.properties.k) {
+      if (popup && popup.isOpen()) popup.remove();
+      return HvvPlanner.showDepartures(stop.geometry.coordinates.slice(), stop.properties);
+    }
+    if (sel && sel.sheet) popup.remove(); // die Karte schliesst sich nicht selbst per Tipp (closeOnClick aus)
   });
   map.on("dragstart", () => { if (sel) sel.userMoved = true; }); // wer die Karte selbst verschiebt, wird nicht mehr zentriert
+  map.on("mouseenter", "stations", () => (map.getCanvas().style.cursor = "pointer"));
+  map.on("mouseleave", "stations", () => (map.getCanvas().style.cursor = ""));
   for (const id of trainLayers) {
     map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));

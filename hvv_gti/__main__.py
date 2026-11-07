@@ -120,7 +120,12 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     bbox = tuple(float(x) for x in args.bbox.split(","))
     types = ("S_BAHN", "U_BAHN", "R_BAHN") + (() if args.no_xbus else ("XPRESSBUS",))
     feed = web.VehicleFeed(client, data_dir, refresh_s=args.refresh, window_s=args.window, bbox=bbox, vehicle_types=types)
-    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir)
+    from .planner import InfluxReader, Planner, Reliability
+
+    token = cfg.influx_read_token or cfg.influx_token
+    reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
+    planner = Planner(client, Reliability(reader))
+    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir, planner)
     stop_event = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop_event.set())

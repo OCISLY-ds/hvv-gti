@@ -188,6 +188,7 @@ class Config:
     influx_org: str = ""
     influx_bucket: str = "hvv"
     influx_token: str = field(default="", repr=False)
+    influx_read_token: str = field(default="", repr=False)  # nur Lesen (Routenplaner der Karte); sonst gilt influx_token
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -206,6 +207,7 @@ class Config:
             influx_org=e.get("INFLUX_ORG", d.influx_org),
             influx_bucket=e.get("INFLUX_BUCKET", d.influx_bucket),
             influx_token=e.get("INFLUX_TOKEN", d.influx_token),
+            influx_read_token=e.get("INFLUX_READ_TOKEN", d.influx_read_token),
         )
 
     def require_gti(self) -> None:
