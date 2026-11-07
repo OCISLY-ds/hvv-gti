@@ -7,6 +7,7 @@ offen sind. Die Seite interpoliert die Zugpositionen selbst aus den Segmentzeite
 import gzip
 import json
 import logging
+import math
 import mimetypes
 import re
 import threading
@@ -30,6 +31,8 @@ VEHICLE_TYPES = {mode: vehicle_type for vehicle_type, mode in MODES.items()}
 COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt auch den RE5 Cuxhaven - Hamburg ab
 COURSE_CACHE_S = 60
 TRACKS_SAVE_INTERVAL_S = 300
+KX_M = math.cos(math.radians(53.55)) * 111320  # Meter je Grad Laenge/Breite bei Hamburg
+KY_M = 110540
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
 REGIONAL_LINE = re.compile(r"^R[EB]\d")  # von den Regionalzuegen (R_BAHN) werden alle RE- und RB-Linien angezeigt
 
@@ -147,6 +150,7 @@ class VehicleFeed:
         self.stations: dict[str, dict] = {}
         self.version = 0
         self._tracks_gz: tuple[int, bytes] | None = None
+        self._edges: tuple[int, dict] | None = None
         self._saved_version = 0
         self._saved_at = 0.0
         self._snapshot: dict | None = None
@@ -182,7 +186,7 @@ class VehicleFeed:
         try:
             self.tracks_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.tracks_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"tracks": {k: {"p": t["p"], "l": t["l"], "g": 1} for k, t in self.tracks.items()}, "stations": self.stations}, separators=(",", ":")), "utf-8")
+            tmp.write_text(json.dumps({"tracks": {k: {"p": t["p"], "l": t["l"], "g": 1, **({"v": 1} if t.get("v") else {})} for k, t in self.tracks.items()}, "stations": self.stations}, separators=(",", ":")), "utf-8")
             tmp.replace(self.tracks_path)
             self._saved_version, self._saved_at = self.version, time.monotonic()
         except OSError as exc:
@@ -190,6 +194,12 @@ class VehicleFeed:
 
     def _remember(self, key: str, points: list[float], line: str, from_key: str, from_name: str, to_key: str, to_name: str) -> None:
         track = self.tracks.get(key)
+        if track is not None and track.get("v"):  # echte Geometrie ersetzt die Behelfslinie
+            track["p"], track["g"] = clean(points), 1
+            track.pop("v")
+            track.pop("cum", None)
+            self._sign(track)
+            self.version += 1
         if track is None:
             track = self.tracks[key] = {"p": clean(points), "g": 1, "l": []}
             self._sign(track)
@@ -205,6 +215,51 @@ class VehicleFeed:
             if line not in station["l"]:
                 station["l"].append(line)
                 self.version += 1
+
+    def _edge_index(self) -> dict[tuple[str, str], list[str]]:
+        """(Starthalt, Zielhalt) -> Gleisabschnitte dazwischen, ueber die naechste bekannte Haltestelle (<= 150 m) an den Enden."""
+        if self._edges is not None and self._edges[0] == self.version:
+            return self._edges[1]
+        stops = [(s["x"] * KX_M, s["y"] * KY_M, key) for key, s in self.stations.items()]
+
+        def nearest(x: float, y: float) -> str | None:
+            best = min(((math.hypot(x * KX_M - sx, y * KY_M - sy), key) for sx, sy, key in stops), default=None)
+            return best[1] if best and best[0] <= 150 else None
+
+        index: dict[tuple[str, str], list[str]] = {}
+        for key, track in self.tracks.items():
+            if track.get("v"):
+                continue
+            a, b = nearest(track["p"][0], track["p"][1]), nearest(track["p"][-2], track["p"][-1])
+            if a and b and a != b:
+                index.setdefault((a, b), []).append(key)
+        self._edges = (self.version, index)
+        return index
+
+    def _bridge(self, line: str, s: dict) -> str | None:
+        """Segment ohne Geometrie (die HVV-Daten lassen sie bei manchen Fahrten weg, z. B. S3 Fischbek - Neugraben): die Linie wird
+        dem vorhandenen Gleis zwischen denselben Haltestellen zugeschlagen, sonst entsteht eine gerade Behelfsverbindung."""
+        a, b = s.get("startStationKey"), s.get("endStationKey")
+        if a not in self.stations or b not in self.stations or a == b:
+            return None
+        found = self._edge_index().get((a, b))
+        if found:
+            for key in found:
+                if line not in self.tracks[key]["l"]:
+                    self.tracks[key]["l"].append(line)
+                    self.version += 1
+            return found[0]
+        key = f"{s['startStopPointKey']}>{s['endStopPointKey']}"
+        track = self.tracks.get(key)
+        if track is None:
+            sa, sb = self.stations[a], self.stations[b]
+            track = self.tracks[key] = {"p": [sa["x"], sa["y"], sb["x"], sb["y"]], "g": 1, "v": 1, "l": []}
+            self._sign(track)
+            self.version += 1
+        if line not in track["l"]:
+            track["l"].append(line)
+            self.version += 1
+        return key
 
     def _fetch(self, first: bool) -> dict:
         now = int(time.time())
@@ -226,6 +281,8 @@ class VehicleFeed:
                 if len(points) >= 4:
                     key = f"{s['startStopPointKey']}>{s['endStopPointKey']}"
                     self._remember(key, points, line, s["startStationKey"], s["startStationName"], s["endStationKey"], s["endStationName"])
+                else:
+                    key = self._bridge(line, s)
                 if s["endDateTime"] < now - 30 or s["startDateTime"] > now + self.window_s:
                     continue
                 out.append(

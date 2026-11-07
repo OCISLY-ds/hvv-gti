@@ -148,6 +148,39 @@ class BuildCourseTest(unittest.TestCase):
 
 
 class VehicleFeedTest(unittest.TestCase):
+    def _gap_journey(self, line, soon, a="SA", b="SB", sp_a="A:2", sp_b="B:2"):
+        seg = journey(line, soon)["segments"][0]
+        seg.update({"startStationKey": a, "endStationKey": b, "startStopPointKey": sp_a, "endStopPointKey": sp_b, "track": None})
+        return {"journeyID": f"gap-{line}", "line": {"name": line, "direction": "Wedel"}, "vehicleType": "S_BAHN", "realtime": True, "segments": [seg]}
+
+    def test_segment_without_geometry_joins_the_existing_track_between_the_same_stops(self):
+        soon = int(time.time()) + 10
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = web.VehicleFeed(FakeClient({"journeys": [journey("S5", soon)]}), Path(tmp))
+            feed._fetch(first=False)  # lernt Gleis A:1>B:1 und die Halte SA, SB
+            feed.client = FakeClient({"journeys": [self._gap_journey("S3", soon)]})
+            data = feed._fetch(first=False)
+        self.assertEqual(sorted(feed.tracks["A:1>B:1"]["l"]), ["S3", "S5"])
+        self.assertEqual(data["journeys"][0]["s"][0]["k"], "A:1>B:1")  # der Zug laesst sich dort animieren
+        self.assertNotIn("A:2>B:2", feed.tracks)
+
+    def test_segment_without_geometry_and_without_track_gets_a_straight_stand_in_that_real_data_replaces(self):
+        soon = int(time.time()) + 10
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = web.VehicleFeed(FakeClient({"journeys": [journey("S5", soon)]}), Path(tmp))
+            feed._fetch(first=False)
+            feed.client = FakeClient({"journeys": [self._gap_journey("S3", soon, a="SB", b="SA", sp_a="B:9", sp_b="A:9")]})
+            feed._fetch(first=False)
+            stand_in = feed.tracks["B:9>A:9"]
+            self.assertTrue(stand_in["v"])
+            self.assertEqual((stand_in["p"], stand_in["l"]), ([10.1, 53.6, 10.0, 53.5], ["S3"]))
+            real = journey("S3", soon)["segments"][0]
+            real.update({"startStationKey": "SB", "endStationKey": "SA", "startStopPointKey": "B:9", "endStopPointKey": "A:9", "track": {"track": [10.1, 53.6, 10.05, 53.55, 10.0, 53.5]}})
+            feed.client = FakeClient({"journeys": [{"journeyID": "real", "line": {"name": "S3", "direction": "x"}, "vehicleType": "S_BAHN", "realtime": True, "segments": [real]}]})
+            feed._fetch(first=False)
+        self.assertNotIn("v", feed.tracks["B:9>A:9"])
+        self.assertEqual(len(feed.tracks["B:9>A:9"]["p"]), 6)
+
     def test_xbus_is_on_by_default_with_tracks_and_stops(self):
         self.assertIn("XPRESSBUS", web.VehicleFeed(FakeClient({}), Path("/nonexistent")).vehicle_types)
 
