@@ -440,6 +440,7 @@ async function refreshTracks() {
   tracksVersion = data.v;
   tracks = data.tracks;
   stations = data.stations;
+  buildStationGrid();
   for (const t of Object.values(tracks)) t.cum = null;
   corridorCache = null;
   rebuildTracks();
@@ -578,24 +579,80 @@ function frame(ts) {
   frameTier = frameCost > 14 ? 2 : frameCost > 7 ? 1 : 0;
 }
 
+// Symbolgroessen in Pixeln je Zoomstufe; muessen zu den Kartenebenen "trains-dot" und "stations" passen
+const lerpZoom = (z, pts) => {
+  if (z <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    if (z <= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (z - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);
+  }
+  return pts[pts.length - 1][1];
+};
+const dotRadius = (z) => lerpZoom(z, [[9, 4], [15, 9]]);
+const pinRadius = (z) => lerpZoom(z, [[9, 5], [12, 8], [16, 12]]);
+const metresPerPixel = (z, lat) => (78271.517 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
+
+// Haltestellen als Raster in Metern, um Zuege am Bahnsteig schnell zu erkennen
+let stationGrid = new Map();
+function buildStationGrid() {
+  stationGrid = new Map();
+  for (const s of Object.values(stations)) {
+    const key = `${Math.floor((s.x * KX) / 150)},${Math.floor((s.y * KY) / 150)}`;
+    if (!stationGrid.has(key)) stationGrid.set(key, []);
+    stationGrid.get(key).push([s.x * KX, s.y * KY]);
+  }
+}
+function nearStation(mx, my, radiusM) {
+  const cx = Math.floor(mx / 150), cy = Math.floor(my / 150), reach = Math.ceil(radiusM / 150);
+  for (let dx = -reach; dx <= reach; dx++) {
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (const [sx, sy] of stationGrid.get(`${cx + dx},${cy + dy}`) || []) if (Math.hypot(mx - sx, my - sy) <= radiusM) return true;
+    }
+  }
+  return false;
+}
+
+// Ueberdeckte Zuege senkrecht stapeln; das Ergebnis (e.sx, e.sy) ist die gezeichnete Position, weich nachgefuehrt
+let lastStackAt = 0;
+function stackOnScreen(items) {
+  const z = map.getZoom(), mpp = metresPerPixel(z, map.getCenter().lat), dot = dotRadius(z), pin = pinRadius(z);
+  const stepPx = 2 * dot + 3, nowMs = performance.now(), dt = Math.min(0.1, (nowMs - lastStackAt) / 1000);
+  lastStackAt = nowMs;
+  const targets = motion.stackTargets(
+    items.map((e) => ({ id: e.id, mx: e.pose.x * KX, my: e.pose.y * KY, dwell: e.pose.dwell })),
+    { thresholdM: Math.max(2 * dot, 14) * mpp, stepPx, baseUpPx: pin + dot + 3, nearAnchor: (mx, my) => nearStation(mx, my, Math.max(pin + dot, 12) * mpp) }
+  );
+  const k = 1 - Math.exp(-10 * dt);
+  for (const e of items) {
+    const target = targets.get(e.id) || 0;
+    e.stackPx = e.stackPx === undefined ? target : e.stackPx + (target - e.stackPx) * k;
+    e.sx = e.pose.x;
+    e.sy = e.pose.y - (e.stackPx * mpp) / KY; // Bildschirm oben = Norden
+  }
+}
+
 function renderTrains() {
   const now = serverNow(), entries = animator.step(now), features = [];
   updateBusyBlocks(entries);
   const bounds = map.getBounds(), padX = (bounds.getEast() - bounds.getWest()) * 0.15, padY = (bounds.getNorth() - bounds.getSouth()) * 0.15;
   const west = bounds.getWest() - padX, east = bounds.getEast() + padX, south = bounds.getSouth() - padY, north = bounds.getNorth() + padY;
+  const visible = [];
   for (const e of entries) {
     const { j, pose: p } = e;
     if (hidden.has(j.l) || !isShown(j.l)) continue;
+    if (e.id !== selectedId && (p.x < west || p.x > east || p.y < south || p.y > north)) continue; // ausserhalb des Kartenausschnitts
+    visible.push(e);
+  }
+  stackOnScreen(visible);
+  for (const e of visible) {
+    const { j, pose: p } = e;
     if (e.id === selectedId) {
-      if (popup && popup.isOpen() && !(sel && sel.sheet)) popup.setLngLat([p.x, p.y]);
+      if (popup && popup.isOpen() && !(sel && sel.sheet)) popup.setLngLat([e.sx, e.sy]);
       // Handy: der Zug bleibt sichtbar, solange die Karte nicht selbst verschoben wird
       if (sel && sel.sheet && !sel.userMoved && performance.now() - (sel.lastPan || 0) > 4000 && sel.lastPan !== undefined) {
         sel.lastPan = performance.now();
-        map.easeTo({ center: [p.x, p.y], duration: 3000, easing: (x) => x });
+        map.easeTo({ center: [e.sx, e.sy], duration: 3000, easing: (x) => x });
       }
       updatePopup(e, now);
-    } else if (p.x < west || p.x > east || p.y < south || p.y > north) {
-      continue; // ausserhalb des Kartenausschnitts: nicht zeichnen
     }
     loadIcon(j.l);
     const next = motion.nextStop(j, e.tau); // Abschnitt nach der angezeigten Zugzeit, passend zur Position
@@ -607,7 +664,7 @@ function renderTrains() {
         id: j.id, l: j.l, c: colorOf(j.l), sel: e.id === selectedId ? 1 : 0, icon: iconState.get(j.l) === "ok" ? `ic-${j.l}` : "",
         rot: e.rot || 0, eta: next ? fmtEta(next.at - now) : "", nxt: next ? next.name : "", dl: late >= 1 ? delayBadge(late, e.trend) : "",
       },
-      geometry: { type: "Point", coordinates: [p.x, p.y] },
+      geometry: { type: "Point", coordinates: [e.sx, e.sy] },
     });
   }
   map.getSource("trains").setData({ type: "FeatureCollection", features });
@@ -982,11 +1039,19 @@ async function main() {
     paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 12.5, 1.5, 16, 3.5], "circle-color": "#fff", "circle-stroke-color": "#ff3b30", "circle-stroke-width": 1.2 },
   });
   const bus = ["==", ["get", "b"], 1];
+  // Stationspins: gross und ab Zoom 9 (Bus ab 12,5) sichtbar, damit sich jede Station anklicken laesst (Abfahrten)
   map.addLayer({
-    id: "stations", type: "circle", source: "stations", minzoom: 11,
+    id: "stations", type: "circle", source: "stations", minzoom: 9, filter: ["!", bus],
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, ["case", bus, 1.2, 2], 16, ["case", bus, 3, 5]],
-      "circle-color": ["case", bus, "#e8c6e0", "#fff"], "circle-stroke-color": "#0b121c", "circle-stroke-width": 1,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 8, 16, 12],
+      "circle-color": "#fff", "circle-stroke-color": "#0b121c", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 16, 3],
+    },
+  });
+  map.addLayer({
+    id: "stations-bus", type: "circle", source: "stations", minzoom: 12.5, filter: bus,
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 12.5, 4, 16, 8],
+      "circle-color": "#e8c6e0", "circle-stroke-color": "#0b121c", "circle-stroke-width": 2,
     },
   });
   // Bahnhoefe ab Zoom 12,5, Bushaltestellen erst ab 14 (sonst zu dicht)
@@ -1031,21 +1096,33 @@ async function main() {
   const trainLayers = ["trains-dot", "trains-icon", "trains-arrow", "trains-delay"];
   // Ein Klick trifft oft mehrere Ebenen (und mehrere Zuege): der oberste Treffer gilt
   map.on("click", (ev) => {
-    const r = matchMedia("(pointer: coarse)").matches ? 16 : 5; // Finger treffen ungenauer als eine Maus
-    const box = [[ev.point.x - r, ev.point.y - r], [ev.point.x + r, ev.point.y + r]];
-    const hit = map.queryRenderedFeatures(box, { layers: trainLayers })[0];
-    if (hit) return showPopup(hit.properties.id, ev.lngLat);
-    // kein Zug getroffen: Klick auf eine Haltestelle zeigt die naechsten Abfahrten
-    const stop = map.queryRenderedFeatures(box, { layers: ["stations"] })[0];
-    if (stop && stop.properties.k) {
+    // Finger treffen ungenauer als eine Maus; Trefferflaeche = Symbolradius + Rand, der Pin ist stets anklickbar
+    const coarse = matchMedia("(pointer: coarse)").matches, z = map.getZoom();
+    const trainR = coarse ? 18 : dotRadius(z) + 3, stopR = coarse ? Math.max(24, pinRadius(z) + 10) : pinRadius(z) + 4;
+    const around = (r) => [[ev.point.x - r, ev.point.y - r], [ev.point.x + r, ev.point.y + r]];
+    const nearest = (features) => {
+      let best = null, bestD = Infinity;
+      for (const f of features) {
+        const q = map.project(f.geometry.coordinates), d = Math.hypot(q.x - ev.point.x, q.y - ev.point.y);
+        if (d < bestD) [best, bestD] = [f, d];
+      }
+      return best && { f: best, d: bestD };
+    };
+    const train = nearest(map.queryRenderedFeatures(around(trainR), { layers: trainLayers }));
+    const stop = nearest(map.queryRenderedFeatures(around(stopR), { layers: ["stations", "stations-bus"] }));
+    // Treffer im Zugsymbol selbst gehoert dem Zug, sonst gewinnt der (groessere) Stationspin
+    if (train && (!stop || train.d <= dotRadius(z) + 2)) return showPopup(train.f.properties.id, ev.lngLat);
+    if (stop && stop.f.properties.k) {
       if (popup && popup.isOpen()) popup.remove();
-      return HvvPlanner.showDepartures(stop.geometry.coordinates.slice(), stop.properties);
+      return HvvPlanner.showDepartures(stop.f.geometry.coordinates.slice(), stop.f.properties);
     }
     if (sel && sel.sheet) popup.remove(); // die Karte schliesst sich nicht selbst per Tipp (closeOnClick aus)
   });
   map.on("dragstart", () => { if (sel) sel.userMoved = true; }); // wer die Karte selbst verschiebt, wird nicht mehr zentriert
-  map.on("mouseenter", "stations", () => (map.getCanvas().style.cursor = "pointer"));
-  map.on("mouseleave", "stations", () => (map.getCanvas().style.cursor = ""));
+  for (const id of ["stations", "stations-bus"]) {
+    map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
+  }
   for (const id of trainLayers) {
     map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));

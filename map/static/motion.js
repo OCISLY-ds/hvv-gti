@@ -253,6 +253,50 @@
     return Infinity;
   }
 
+  // ---- Stapeln ueberdeckter Zuege ----
+  //
+  // Zuege, die auf dem Bildschirm naeher als `thresholdM` beieinander liegen (zusammen an einer Station, auf Parallelgleisen),
+  // werden senkrecht uebereinander gestapelt. Haelt mindestens ein Zug an einer Station (`nearAnchor`), sitzt der Stapel ueber dem
+  // Stationspin, damit der Pin frei und anklickbar bleibt. Ergebnis: Versatz je Zug in Pixeln (negativ = nach oben).
+  function stackTargets(items, { thresholdM, stepPx, baseUpPx, nearAnchor }) {
+    const out = new Map();
+    const parent = items.map((_, i) => i);
+    const find = (i) => {
+      while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+      return i;
+    };
+    const grid = new Map(), cell = Math.max(thresholdM, 1);
+    items.forEach((it, i) => {
+      const cx = Math.floor(it.mx / cell), cy = Math.floor(it.my / cell);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (const j of grid.get(`${cx + dx},${cy + dy}`) || []) {
+            if (Math.hypot(it.mx - items[j].mx, it.my - items[j].my) < thresholdM) parent[find(i)] = find(j);
+          }
+        }
+      }
+      const key = `${cx},${cy}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    });
+    const groups = new Map();
+    items.forEach((it, i) => {
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(it);
+    });
+    for (const group of groups.values()) {
+      const anchored = nearAnchor && group.some((it) => it.dwell && nearAnchor(it.mx, it.my));
+      if (group.length === 1 && !anchored) {
+        out.set(group[0].id, 0);
+        continue;
+      }
+      group.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      group.forEach((it, i) => out.set(it.id, anchored ? -(baseUpPx + i * stepPx) : (i - (group.length - 1) / 2) * stepPx));
+    }
+    return out;
+  }
+
   // ---- Animator ----
 
   class Animator {
@@ -275,7 +319,7 @@
           tau = anchor(old.pose, j, now);
           if (Math.abs(now - tau) > SNAP_S) tau = now;
         }
-        next.set(j.id, { id: j.id, j, tau, seenAt: now, pose: old ? old.pose : null, blocks: old ? old.blocks : null, blockedSince: old ? old.blockedSince : null, braked: old ? old.braked : false, speed: old ? old.speed : 0, rot: old ? old.rot : null, dCur: old ? old.dCur : null, trend: old ? old.trend : 0 });
+        next.set(j.id, { id: j.id, j, tau, seenAt: now, pose: old ? old.pose : null, stackPx: old ? old.stackPx : undefined, blocks: old ? old.blocks : null, blockedSince: old ? old.blockedSince : null, braked: old ? old.braked : false, speed: old ? old.speed : 0, rot: old ? old.rot : null, dCur: old ? old.dCur : null, trend: old ? old.trend : 0 });
       }
       for (const [id, e] of this.entries) {
         if (!next.has(id) && e.pose && now - e.seenAt < KEEP_S) next.set(id, e);
@@ -342,5 +386,5 @@
     }
   }
 
-  return { DWELL_S, KX, KY, Animator, blockOf, blockId, boundsOf, slice, occupiedBlocks, ease, easeInv, locate, poseAt, nextStop, prepare, anchor, carryOver };
+  return { DWELL_S, KX, KY, Animator, blockOf, blockId, boundsOf, slice, occupiedBlocks, stackTargets, ease, easeInv, locate, poseAt, nextStop, prepare, anchor, carryOver };
 });

@@ -132,7 +132,7 @@ test("prepare computes effective arrival and ramp", () => {
 });
 
 // ---- Blockabstand ----
-const { blockOf, occupiedBlocks } = require("../../map/static/motion.js");
+const { blockOf, occupiedBlocks, stackTargets } = require("../../map/static/motion.js");
 const blockTracks = {
   "A>B": { p: [10.0, 53.5, 10.1, 53.5], s: [0.5] }, // ein Signal in der Mitte: Blocke S:A, T:A>B:1, S:B (Bahnhof B)
   "B>C": { p: [10.1, 53.5, 10.2, 53.5], s: [0.5] },
@@ -198,4 +198,34 @@ test("a train occupies every block over its length of about 160 m", () => {
   const blocks = occupiedBlocks({ s: [pose.seg] }, tr, pose);
   assert.ok(blocks.length >= 5 && blocks.length <= 7, blocks.join());
   assert.ok(blocks.includes(blockOf(tr, "A>B", 0.5)));
+});
+
+// ---- Stapeln ----
+const stack = (items, opts = {}) => stackTargets(items, { thresholdM: 20, stepPx: 20, baseUpPx: 30, nearAnchor: null, ...opts });
+
+test("trains far apart are not moved", () => {
+  const out = stack([{ id: "a", mx: 0, my: 0 }, { id: "b", mx: 100, my: 0 }]);
+  assert.deepEqual([out.get("a"), out.get("b")], [0, 0]);
+});
+
+test("overlapping trains are stacked vertically, centered and in a stable order", () => {
+  const items = [{ id: "c", mx: 0, my: 0 }, { id: "a", mx: 3, my: 1 }, { id: "b", mx: 6, my: 0 }];
+  const out = stack(items);
+  assert.deepEqual([out.get("a"), out.get("b"), out.get("c")], [-20, 0, 20]); // nach id sortiert, um 0 zentriert
+  assert.deepEqual([...stack([...items].reverse()).entries()].sort().map((e) => e[1]), [-20, 0, 20]);
+});
+
+test("a chain of close trains forms one stack", () => {
+  const out = stack([{ id: "a", mx: 0, my: 0 }, { id: "b", mx: 15, my: 0 }, { id: "c", mx: 30, my: 0 }]);
+  assert.equal(new Set([...out.values()]).size, 3);
+});
+
+test("trains dwelling at a station are stacked above the pin, even a single one", () => {
+  const near = (mx, my) => Math.hypot(mx, my) < 25;
+  const single = stack([{ id: "a", mx: 2, my: 0, dwell: true }], { nearAnchor: near });
+  assert.equal(single.get("a"), -30); // ueber dem Pin
+  const two = stack([{ id: "a", mx: 2, my: 0, dwell: true }, { id: "b", mx: 4, my: 0, dwell: true }], { nearAnchor: near });
+  assert.deepEqual([two.get("a"), two.get("b")], [-30, -50]); // Pin bleibt frei
+  const passing = stack([{ id: "a", mx: 2, my: 0, dwell: false }], { nearAnchor: near });
+  assert.equal(passing.get("a"), 0); // durchfahrende Zuege hopsen nicht
 });
