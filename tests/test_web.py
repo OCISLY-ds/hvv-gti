@@ -33,6 +33,27 @@ def journey(line="S1", start=2_000_000_000, vehicle_type="S_BAHN", journey_id="j
     }
 
 
+class QuietServerTest(unittest.TestCase):
+    def _errors(self, exc):
+        import contextlib
+        import io
+
+        server = web.QuietServer(("127.0.0.1", 0), web.Handler)
+        self.addCleanup(server.server_close)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            try:
+                raise exc
+            except Exception:
+                server.handle_error(None, ("127.0.0.1", 1))
+        return err.getvalue()
+
+    def test_client_aborts_are_silent_but_real_errors_are_reported(self):
+        for exc in (ConnectionResetError("reset"), BrokenPipeError("pipe"), ConnectionAbortedError("abort"), TimeoutError("slow")):
+            self.assertEqual(self._errors(exc), "")
+        self.assertIn("ValueError", self._errors(ValueError("kaputt")))
+
+
 class RateLimitTest(unittest.TestCase):
     def test_limits_per_key_within_the_window_and_recovers(self):
         limiter = web.RateLimiter(3, window_s=60)

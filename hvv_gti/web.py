@@ -11,6 +11,7 @@ import logging
 import math
 import mimetypes
 import re
+import sys
 import threading
 import time
 from datetime import datetime
@@ -624,9 +625,21 @@ class MapApp:
         return self.data_dir / "hamburg.pmtiles"
 
 
+class QuietServer(ThreadingHTTPServer):
+    """Wie ThreadingHTTPServer, aber ohne Fehlertext fuer Verbindungen, die der Client (Browser, Proxy, Health-Check) selbst
+    abbricht: das ist Alltag hinter einem Reverse Proxy und sonst eine Tracebackflut im Log."""
+
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):  # Reset, Abbruch, gebrochene Leitung
+            return
+        super().handle_error(request, client_address)
+
+
 def serve(app: MapApp, host: str, port: int, stop: threading.Event) -> None:
     handler = type("BoundHandler", (Handler,), {"app": app})
-    httpd = ThreadingHTTPServer((host, port), handler)
+    httpd = QuietServer((host, port), handler)
     httpd.daemon_threads = True
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
