@@ -23,6 +23,7 @@ const SYMBOLS = { S: "S", U: "U", RE: "RE", RB: "RB", X: "X", O: "…" }; // Bes
 const COLLAPSED = new Set(["RE", "RB"]); // in der Liste standardmaessig eingeklappt
 const showCat = Object.fromEntries(CATEGORIES.map(([c]) => [c, true]));
 const isShown = (line) => showCat[catOf(line)];
+let geometrySig = "";
 let corridorCache = null, lastFetched = null, showBlocks = false, busyKey = "";
 const storage = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -81,12 +82,34 @@ const MERGE_DIST_M = 35;
 const MERGE_SHARE = 0.9;
 const KX = Math.cos((53.55 * Math.PI) / 180) * 111320, KY = 110540;
 
-function distToPolyline(x, y, P) {
+// Linie mit Segmentraster (Zellen von CELL_M): fuer Abstaende bis CELL_M muessen nur die Segmente der Nachbarzellen geprueft
+// werden statt der ganzen Linie; bei Abstaenden darueber liefert distToPoly Infinity
+function makePoly(P) {
+  const cells = new Map();
+  const add = (key, seg) => {
+    const list = cells.get(key);
+    if (!list) cells.set(key, [seg]);
+    else if (list[list.length - 1] !== seg) list.push(seg);
+  };
+  for (let i = 2, seg = 0; i < P.length; i += 2, seg++) {
+    const ax = P[i - 2], ay = P[i - 1], dx = P[i] - ax, dy = P[i + 1] - ay, len = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(len / 20));
+    for (let k = 0; k <= steps; k++) add(`${Math.floor((ax + (dx * k) / steps) / CELL_M)},${Math.floor((ay + (dy * k) / steps) / CELL_M)}`, seg);
+  }
+  return { P, cells };
+}
+
+function distToPoly(x, y, poly) {
+  const P = poly.P, cx = Math.floor(x / CELL_M), cy = Math.floor(y / CELL_M);
   let best = Infinity;
-  for (let i = 2; i < P.length; i += 2) {
-    const ax = P[i - 2], ay = P[i - 1], dx = P[i] - ax, dy = P[i + 1] - ay, l = dx * dx + dy * dy;
-    const u = l ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l)) : 0;
-    best = Math.min(best, Math.hypot(x - ax - u * dx, y - ay - u * dy));
+  for (let gx = -1; gx <= 1; gx++) {
+    for (let gy = -1; gy <= 1; gy++) {
+      for (const seg of poly.cells.get(`${cx + gx},${cy + gy}`) || []) {
+        const i = seg * 2 + 2, ax = P[i - 2], ay = P[i - 1], dx = P[i] - ax, dy = P[i + 1] - ay, l = dx * dx + dy * dy;
+        const u = l ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l)) : 0;
+        const d = Math.hypot(x - ax - u * dx, y - ay - u * dy);
+        if (d < best) best = d;
+      }
+    }
   }
   return best;
 }
@@ -101,14 +124,33 @@ function sampleEvery(P, step) {
   return out;
 }
 
-function shareWithin(S, P) {
-  let hit = 0;
-  for (let i = 0; i < S.length; i += 2) if (distToPolyline(S[i], S[i + 1], P) <= MERGE_DIST_M) hit++;
-  return hit / (S.length / 2);
+// Anteil der Stuetzpunkte von S, die hoechstens MERGE_DIST_M von der Linie P entfernt liegen; bricht ab, sobald MERGE_SHARE
+// nicht mehr erreichbar ist (liefert dann 0), das spart bei den vielen ungleichen Paaren fast die ganze Rechenzeit
+function shareWithin(S, poly) {
+  const n = S.length / 2, allowedMisses = Math.floor(n * (1 - MERGE_SHARE));
+  let miss = 0;
+  for (let i = 0; i < S.length; i += 2) {
+    if (distToPoly(S[i], S[i + 1], poly) > MERGE_DIST_M && ++miss > allowedMisses) return 0;
+  }
+  return 1 - miss / n;
+}
+
+// Raster fuer die Vorauswahl: zwei Punkte, die hoechstens MERGE_DIST_M plus halber Stuetzpunktabstand (7,5 m) auseinanderliegen,
+// liegen in Zellen, die sich um hoechstens 1 unterscheiden, solange die Zelle mindestens so gross ist
+const CELL_M = 50;
+
+function geometrySignature() {
+  let points = 0, bus = 0, n = 0;
+  for (const t of Object.values(tracks)) {
+    n++;
+    points += t.p.length;
+    if (t.l.every(isX)) bus++;
+  }
+  return `${n}:${points}:${bus}`;
 }
 
 function corridors() {
-  const items = Object.values(tracks).filter((t) => t.p.length >= 4).map((t) => {
+  const items = Object.entries(tracks).filter(([, t]) => t.p.length >= 4).map(([key, t]) => {
     const P = [];
     for (let i = 0; i + 1 < t.p.length; i += 2) P.push(t.p[i] * KX, t.p[i + 1] * KY);
     const box = [Infinity, Infinity, -Infinity, -Infinity];
@@ -116,17 +158,37 @@ function corridors() {
       box[0] = Math.min(box[0], P[i]); box[1] = Math.min(box[1], P[i + 1]);
       box[2] = Math.max(box[2], P[i]); box[3] = Math.max(box[3], P[i + 1]);
     }
-    return { t, P, S: sampleEvery(P, 15), box, bus: t.l.every(isX), root: null };
+    return { key, t, P, poly: makePoly(P), S: sampleEvery(P, 15), box, bus: t.l.every(isX), root: null };
   });
   const find = (x) => { while (x.root) x = x.root; return x; };
+  // Vorauswahl ueber ein Zellraster: ein Paar kommt nur in Frage, wenn von jedem Abschnitt mindestens MERGE_SHARE der Stuetzpunkte
+  // in einer Zelle liegen, die der andere (samt Nachbarzellen) beruehrt; das ist eine notwendige Bedingung des genauen Tests
+  const cellKey = (x, y) => `${Math.floor(x / CELL_M)},${Math.floor(y / CELL_M)}`;
+  const reach = items.map((it) => {
+    const cells = new Set();
+    for (let i = 0; i < it.S.length; i += 2) {
+      const cx = Math.floor(it.S[i] / CELL_M), cy = Math.floor(it.S[i + 1] / CELL_M);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) cells.add(`${cx + dx},${cy + dy}`);
+    }
+    return cells;
+  });
+  const owners = new Map();
+  reach.forEach((cells, i) => { for (const c of cells) (owners.get(c) || owners.set(c, []).get(c)).push(i); });
+  // covered[i] -> Map(j -> Anzahl Stuetzpunkte von i in der Reichweite von j)
+  const covered = items.map((it, i) => {
+    const counts = new Map();
+    for (let k = 0; k < it.S.length; k += 2) for (const j of owners.get(cellKey(it.S[k], it.S[k + 1])) || []) if (j !== i) counts.set(j, (counts.get(j) || 0) + 1);
+    return counts;
+  });
   for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
+    for (const [j, countIJ] of covered[i]) {
+      if (j <= i) continue;
       const A = items[i], B = items[j];
       if (A.bus !== B.bus) continue; // Bus und Schiene werden nie zusammengelegt
-      if (A.box[2] + MERGE_DIST_M < B.box[0] || B.box[2] + MERGE_DIST_M < A.box[0] || A.box[3] + MERGE_DIST_M < B.box[1] || B.box[3] + MERGE_DIST_M < A.box[1]) continue;
+      if (countIJ < MERGE_SHARE * (A.S.length / 2) || (covered[j].get(i) || 0) < MERGE_SHARE * (B.S.length / 2)) continue;
       const ra = find(A), rb = find(B);
       if (ra === rb) continue;
-      if (shareWithin(A.S, B.P) >= MERGE_SHARE && shareWithin(B.S, A.P) >= MERGE_SHARE) ra.root = rb;
+      if (shareWithin(A.S, B.poly) >= MERGE_SHARE && shareWithin(B.S, A.poly) >= MERGE_SHARE) ra.root = rb;
     }
   }
   const groups = new Map();
@@ -141,7 +203,7 @@ function corridors() {
   return [...groups.values()].map((members) => {
     const lead = members.reduce((a, b) => (b.S.length > a.S.length ? b : a));
     const extras = [];
-    for (const m of members) if (m !== lead) for (const run of uncovered(m, lead)) extras.push({ run, lines: m.t.l });
+    for (const m of members) if (m !== lead) for (const run of uncovered(m, lead)) extras.push({ run, key: m.key });
     return { members, lead, extras };
   });
 }
@@ -154,7 +216,7 @@ function uncovered(it, lead) {
   const S = it.S, n = S.length / 2, runs = [];
   let start = -1;
   for (let i = 0; i <= n; i++) {
-    const far = i < n && distToPolyline(S[2 * i], S[2 * i + 1], lead.P) > COVER_M;
+    const far = i < n && distToPoly(S[2 * i], S[2 * i + 1], lead.poly) > COVER_M;
     if (far && start < 0) start = i;
     if (!far && start >= 0) {
       if (i - start >= 2) runs.push(S.slice(2 * Math.max(0, start - 1), 2 * Math.min(n - 1, i) + 2));
@@ -171,6 +233,7 @@ function uncovered(it, lead) {
 // dieselbe physische Seite; bisher drehte jedes Stueck nach seiner eigenen West-Ost-Regel und die Linie sprang seitlich.
 // An den Verbindungen wird der Versatz jeder Linie auf den Mittelwert der Nachbarn gelegt und in den letzten TRANS_M Metern
 // stufenlos (in kleinen Teilstuecken) dorthin ueberblendet.
+const LINK_M = 80; // Enden bis zu diesem Abstand mit gemeinsamer Linie gelten fuer die Spurseite als verbunden
 const JOIN_M = 30, TRANS_M = 120, TRANS_STEP_M = 30, TANGENT_M = 12;
 
 function metresOf(pts) {
@@ -199,15 +262,13 @@ function reversePiece(piece) {
 function layoutPieces(groups) {
   const pieces = [];
   for (const { members, lead, extras } of groups) {
-    const lines = new Set();
-    for (const m of members) for (const l of m.t.l) lines.add(l);
     const pts = [];
     for (let i = 0; i + 1 < lead.t.p.length; i += 2) pts.push([lead.t.p[i], lead.t.p[i + 1]]);
-    pieces.push({ pts, lines });
-    for (const { run, lines: ls } of extras) {
+    pieces.push({ pts, keys: members.map((m) => m.key) });
+    for (const { run, key } of extras) {
       const part = [];
       for (let i = 0; i + 1 < run.length; i += 2) part.push([run[i] / KX, run[i + 1] / KY]);
-      pieces.push({ pts: part, lines: new Set(ls) });
+      pieces.push({ pts: part, keys: [key] });
     }
   }
   for (const p of pieces) p.cum = metresOf(p.pts);
@@ -285,14 +346,48 @@ function layoutPieces(groups) {
 // Die Beziehungen werden nach Eindeutigkeit (parallele Tangenten zuerst, fast rechtwinklige Abzweige zuletzt) in eine
 // Vorzeichen-Union-Find-Struktur aufgenommen; widerspruechliche Kanten in Schleifen verlieren gegen die eindeutigeren.
 function assignSigma(pieces, nodes) {
+  // Nur Stuecke mit gemeinsamer Linie haengen bei der Spurseite voneinander ab; an grossen Knoten (Hauptbahnhof: 21 Gleisenden)
+  // wuerden sonst fremde Linien falsche Zwangsbedingungen erzeugen und die Seiten anderswo kippen lassen.
+  const lineSet = pieces.map((p) => {
+    const set = new Set();
+    for (const k of p.keys) for (const l of tracks[k]?.l || []) set.add(l);
+    return set;
+  });
+  const shareLine = (a, b) => [...lineSet[a.id]].some((l) => lineSet[b.id].has(l));
   const edges = [];
   for (const node of nodes) {
     for (let i = 0; i < node.length; i++) {
       for (let j = i + 1; j < node.length; j++) {
         const a = node[i], b = node[j];
-        if (a.p === b.p) continue;
+        if (a.p === b.p || !shareLine(a.p, b.p)) continue;
         const ta = travelTangent(a.p, a.end), tb = travelTangent(b.p, b.end), dot = ta[0] * tb[0] + ta[1] * tb[1];
         edges.push({ a: a.p.id, b: b.p.id, w: Math.abs(dot), s: dot >= 0 ? 1 : -1 });
+      }
+    }
+  }
+  // Zusaetzliche, schwaechere Verknuepfungen: Enden, die zu weit fuer einen Knoten auseinanderliegen (Bahnsteigvarianten, Luecken
+  // in den HVV-Daten), aber dieselbe Linie fuehren. Ohne sie bekaeme ein Stueck, das nur ueber so eine Luecke anschliesst, seine
+  // Spurseite zufaellig und die Linien wuerden dort die Seiten tauschen.
+  const ends = [], grid = new Map(), cell = (v) => Math.floor(v / LINK_M);
+  for (const p of pieces) {
+    for (const end of ["s", "e"]) {
+      const q = end === "s" ? p.pts[0] : p.pts[p.pts.length - 1];
+      ends.push({ p, end, x: q[0] * KX, y: q[1] * KY, node: end === "s" ? p.nodeS : p.nodeE });
+    }
+  }
+  for (const e of ends) {
+    const key = `${cell(e.x)},${cell(e.y)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(e);
+  }
+  for (const e of ends) {
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      for (const o of grid.get(`${cell(e.x) + dx},${cell(e.y) + dy}`) || []) {
+        if (o.p.id <= e.p.id || o.node === e.node) continue;
+        const dist = Math.hypot(e.x - o.x, e.y - o.y);
+        if (dist > LINK_M || !shareLine(e.p, o.p)) continue;
+        const ta = travelTangent(e.p, e.end), tb = travelTangent(o.p, o.end), dot = ta[0] * tb[0] + ta[1] * tb[1];
+        edges.push({ a: e.p.id, b: o.p.id, w: 0.5 * Math.abs(dot) * (1 - dist / (2 * LINK_M)), s: dot >= 0 ? 1 : -1 });
       }
     }
   }
@@ -336,7 +431,12 @@ function trackGeoJson() {
   const features = [];
   corridorCache ||= layoutPieces(corridors()); // teuer und unabhaengig vom Schalter fuer die X-Busse
   const { pieces, nodes } = corridorCache;
-  const sortedLines = (p) => [...p.lines].filter(isShown).sort((x, y) => x.localeCompare(y, "de", { numeric: true }));
+  // Linien eines Stuecks: aus den aktuellen Gleisen (die Linienlisten aendern sich, die Geometrie meist nicht)
+  const sortedLines = (p) => {
+    const lines = new Set();
+    for (const k of p.keys) for (const l of tracks[k]?.l || []) lines.add(l);
+    return [...lines].filter(isShown).sort((x, y) => x.localeCompare(y, "de", { numeric: true }));
+  };
   const laneOf = new Map(); // Stueck -> {Linie: Versatz in Spuren}
   for (const p of pieces) {
     const ls = sortedLines(p), lanes = {};
@@ -442,7 +542,10 @@ async function refreshTracks() {
   stations = data.stations;
   buildStationGrid();
   for (const t of Object.values(tracks)) t.cum = null;
-  corridorCache = null;
+  // Die Korridor-Zusammenfassung ist teuer: nur neu berechnen, wenn sich die Geometrie aendert, nicht bei neuen Linien auf alten Gleisen
+  const sig = geometrySignature();
+  if (sig !== geometrySig) corridorCache = null;
+  geometrySig = sig;
   rebuildTracks();
 }
 
