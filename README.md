@@ -210,3 +210,20 @@ Nicht geprüft:
 ```bash
 python3 -m unittest discover -s tests -t .
 ```
+
+## Karte auf einem zweiten Host (nur Live-Karte, ohne Datenbank)
+
+`serve-map` braucht nur `HVV_GTI_USER` und `HVV_GTI_PASSWORD` in der `.env` (`INFLUX_*` leer lassen: die Karte und der Routenplaner laufen dann ohne Pünktlichkeits- und Ausfallprozente). Der Collector bleibt dort, wo die InfluxDB läuft, damit die GTI nur einmal abgefragt wird.
+
+```bash
+git clone -b dev https://github.com/OCISLY-ds/hvv-gti.git /opt/hvv-gti && cd /opt/hvv-gti
+mkdir -p data map/data                      # als Benutzer mit UID 1000, sonst legt Docker sie als root an
+cp .env.example .env && chmod 600 .env      # HVV_GTI_USER und HVV_GTI_PASSWORD eintragen
+# optional vom ersten Host kopieren (gelernte Gleise, Signale, Vektorkacheln); ohne tracks.json lernt die Karte sie neu:
+#   scp pi:hvv-gti/map/data/{tracks.json,signals.json,hamburg.pmtiles} map/data/
+docker compose up -d --build hvv-map        # Test auf Port 8090: curl -I http://localhost:8090
+cp deploy/docker-compose.override.flo-mc.yml docker-compose.override.yml   # Port 8100
+docker compose up -d hvv-map
+```
+
+Selbstaktualisierung per Cron (`*/5 * * * * /opt/hvv-gti/deploy/pull-and-build.sh`): holt den Branch und baut `hvv-map` nur bei neuen Commits neu. Abfahrten, Routen und Stationssuche sind je Client-IP auf 60 Anfragen pro Minute begrenzt (`serve-map --planner-rate`, hinter einem Proxy gilt `X-Forwarded-For`), damit die Karte bei öffentlichem Zugang das gemeinsame GTI-Konto nicht aufbraucht.

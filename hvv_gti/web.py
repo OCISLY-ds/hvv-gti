@@ -5,6 +5,7 @@ offen sind. Die Seite interpoliert die Zugpositionen selbst aus den Segmentzeite
 """
 
 import gzip
+import ipaddress
 import json
 import logging
 import math
@@ -445,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
         planner = self.app.planner
         if planner is None:
             return self._json({"error": "Routenplaner nicht verfuegbar"}, HTTPStatus.NOT_FOUND)
+        if not self.app.limiter.allow(client_ip(self.client_address[0], self.headers.get("X-Forwarded-For"))):
+            return self._json({"error": "Zu viele Anfragen – bitte kurz warten."}, HTTPStatus.TOO_MANY_REQUESTS)
         query = parse_qs(urlsplit(self.path).query)
         arg = lambda name: (query.get(name, [""])[0] or "").strip()
         station = re.compile(r"^[A-Za-z0-9_.:-]{1,40}$")
@@ -534,9 +537,56 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
 
 
+PROXY_NETWORKS = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")]  # Adressen, hinter denen ein Proxy steht
+
+
+class RateLimiter:
+    """Begrenzt Anfragen je Schluessel (Client-IP) auf `limit` pro `window_s` Sekunden. Schuetzt das gemeinsame GTI-Konto, wenn die
+    Karte oeffentlich erreichbar ist: Abfahrten, Routen und Stationssuche loesen je einen GTI-Aufruf aus."""
+
+    def __init__(self, limit: int, window_s: float = 60.0):
+        self.limit, self.window_s = limit, window_s
+        self._hits: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        if self.limit <= 0:
+            return True
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            recent = [t for t in self._hits.get(key, []) if now - t < self.window_s]
+            allowed = len(recent) < self.limit
+            if allowed:
+                recent.append(now)
+            if recent:
+                self._hits[key] = recent
+            else:
+                self._hits.pop(key, None)
+            if len(self._hits) > 5000:  # Speicher begrenzen
+                self._hits = {k: v for k, v in self._hits.items() if now - v[-1] < self.window_s}
+            return allowed
+
+
+def client_ip(peer: str, forwarded: str | None) -> str:
+    """Hinter einem Reverse Proxy (privater/lokaler Peer) gilt die erste Adresse aus X-Forwarded-For, sonst die Peer-Adresse."""
+    try:
+        address = ipaddress.ip_address(peer)
+        trusted = address.is_loopback or any(address in net for net in PROXY_NETWORKS if net.version == address.version)
+    except ValueError:
+        trusted = False
+    if trusted and forwarded:
+        first = forwarded.split(",")[0].strip()
+        try:
+            return str(ipaddress.ip_address(first))
+        except ValueError:
+            pass
+    return peer
+
+
 class MapApp:
-    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path, planner=None):
+    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path, planner=None, planner_rate: int = 60):
         self.feed, self.icons, self.static_dir, self.data_dir, self.planner = feed, icons, static_dir, data_dir, planner
+        self.limiter = RateLimiter(planner_rate)
 
     def tiles_file(self) -> Path:
         return self.data_dir / "hamburg.pmtiles"

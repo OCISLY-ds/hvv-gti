@@ -33,6 +33,21 @@ def journey(line="S1", start=2_000_000_000, vehicle_type="S_BAHN", journey_id="j
     }
 
 
+class RateLimitTest(unittest.TestCase):
+    def test_limits_per_key_within_the_window_and_recovers(self):
+        limiter = web.RateLimiter(3, window_s=60)
+        self.assertEqual([limiter.allow("a", now=t) for t in (0, 1, 2, 3)], [True, True, True, False])
+        self.assertTrue(limiter.allow("b", now=3))  # anderer Client unberuehrt
+        self.assertTrue(limiter.allow("a", now=61))  # Fenster vorbei
+        self.assertTrue(web.RateLimiter(0).allow("x"))  # 0 = aus
+
+    def test_client_ip_trusts_forwarded_for_only_behind_a_private_proxy(self):
+        self.assertEqual(web.client_ip("10.99.0.1", "203.0.113.7, 10.99.0.1"), "203.0.113.7")
+        self.assertEqual(web.client_ip("127.0.0.1", None), "127.0.0.1")
+        self.assertEqual(web.client_ip("198.51.100.9", "203.0.113.7"), "198.51.100.9")  # oeffentlicher Peer: Header nicht glaubwuerdig
+        self.assertEqual(web.client_ip("10.0.0.1", "kein-ip"), "10.0.0.1")
+
+
 class IconIndexTest(unittest.TestCase):
     def test_train_beats_bus_and_missing_keys_are_skipped(self):
         lines = [

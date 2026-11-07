@@ -125,7 +125,7 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     token = cfg.influx_read_token or cfg.influx_token
     reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
     planner = Planner(client, Reliability(reader))
-    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir, planner)
+    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir, planner, args.planner_rate)
     stop_event = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop_event.set())
@@ -178,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", type=float, default=30.0, help="Sekunden zwischen GTI-Abfragen")
     p.add_argument("--window", type=int, default=300, help="Vorausschau in Sekunden")
     p.add_argument("--no-xbus", action="store_true", help="die X-Busse (Xpressbus) nicht abfragen und nicht auf der Karte anbieten")
+    p.add_argument("--planner-rate", type=int, default=60, help="Abfahrten/Routen/Stationssuche je Client-IP und Minute (0 = unbegrenzt)")
     p.add_argument("--static-dir", default="map/static")
     p.add_argument("--data-dir", default="map/data")
     p.add_argument("--icons-dir", default="data/icons")
