@@ -4,7 +4,7 @@
 // geladen sind und fuer Linien ohne eigenes Icon (S11, S21, S31 = Farbe der Grundlinie) gelten diese Werte
 const COLORS = {};
 const FALLBACK = { U: "#1a6fb5", R: "#c8102e", X: "#a61e8c", S: "#2ca147" };
-const colorOf = (line) => COLORS[line] || COLORS[line.replace(/^([SU]\d)\d$/, "$1")] || (/^RB/.test(line) ? "#ffffff" : FALLBACK[line[0]] || FALLBACK.S);
+const colorOf = (line) => COLORS[line] || COLORS[line.replace(/^([SU]\d)\d$/, "$1")] || (/^R[EB]/.test(line) ? "#ffffff" : FALLBACK[line[0]] || FALLBACK.S);
 
 const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
@@ -261,7 +261,8 @@ function layoutPieces(groups) {
           // `o.end` ist das Ende von q in dessen Ausgangsrichtung (q wurde noch nicht gedreht)
           const aQ = awayTangent(q, o.end), dot = aC[0] * aQ[0] + aC[1] * aQ[1];
           const leaves = (end === "e") === dot < 0; // q beginnt am Knoten (verlaesst ihn) statt dort zu enden
-          if ((o.end === "s") !== leaves) reversePiece(q);
+          const reversed = (o.end === "s") !== leaves;
+          if (reversed) reversePiece(q);
           seen.add(q.id);
           queue.push(q);
         }
@@ -274,7 +275,41 @@ function layoutPieces(groups) {
     finalNodes[p.nodeS].push({ p, end: "s" });
     finalNodes[p.nodeE].push({ p, end: "e" });
   }
+  assignSigma(pieces, finalNodes);
   return { pieces, nodes: finalNodes };
+}
+
+// sigma (+1/-1) je Stueck: auf welcher Seite des Stuecks die Spuren im gemeinsamen Bezugssystem liegen. Laufen zwei Stuecke
+// am Knoten entgegengesetzt (frontal aufeinander zu oder beide vom Knoten weg), ist "rechts" des einen das "links" des anderen;
+// die Spurreihenfolge wird dann gespiegelt, damit jede Linie auf derselben Seite des Gleises bleibt statt am Knoten zu kreuzen.
+// Die Beziehungen werden nach Eindeutigkeit (parallele Tangenten zuerst, fast rechtwinklige Abzweige zuletzt) in eine
+// Vorzeichen-Union-Find-Struktur aufgenommen; widerspruechliche Kanten in Schleifen verlieren gegen die eindeutigeren.
+function assignSigma(pieces, nodes) {
+  const edges = [];
+  for (const node of nodes) {
+    for (let i = 0; i < node.length; i++) {
+      for (let j = i + 1; j < node.length; j++) {
+        const a = node[i], b = node[j];
+        if (a.p === b.p) continue;
+        const ta = travelTangent(a.p, a.end), tb = travelTangent(b.p, b.end), dot = ta[0] * tb[0] + ta[1] * tb[1];
+        edges.push({ a: a.p.id, b: b.p.id, w: Math.abs(dot), s: dot >= 0 ? 1 : -1 });
+      }
+    }
+  }
+  edges.sort((x, y) => y.w - x.w);
+  const parent = pieces.map((_, i) => i), parity = pieces.map(() => 1); // parity: sigma des Stuecks relativ zu seinem Elternteil
+  const find = (x) => {
+    let par = 1;
+    while (parent[x] !== x) { par *= parity[x]; x = parent[x]; }
+    return [x, par];
+  };
+  for (const e of edges) {
+    const [ra, pa] = find(e.a), [rb, pb] = find(e.b);
+    if (ra === rb) continue;
+    parent[rb] = ra;
+    parity[rb] = e.s * pa * pb;
+  }
+  for (const p of pieces) p.sigma = find(p.id)[1];
 }
 
 // Fahrtrichtung des Teilstuecks am Knoten (am Anfang vom Knoten weg, am Ende zum Knoten hin)
@@ -308,26 +343,18 @@ function trackGeoJson() {
     ls.forEach((l, i) => (lanes[l] = i - (ls.length - 1) / 2));
     laneOf.set(p, lanes);
   }
-  // Versatz am Knoten: alle Stuecke mit der Linie werden in das Bezugssystem des ersten umgerechnet (Vorzeichen nach der
-  // Fahrtrichtung am Knoten), gemittelt und fuer jedes Stueck zurueckgerechnet, so dass alle denselben Punkt ansteuern
-  const consensus = new Map();
+  // Spurwert am Knoten im Bezugssystem (ohne sigma): Mittelwert der Stuecke, die die Linie dort haben, damit alle denselben
+  // Punkt ansteuern; gezeichnet wird er mit dem sigma des jeweiligen Stuecks
+  const meanAt = new Map();
   const target = (p, end, l) => {
     const node = end === "s" ? p.nodeS : p.nodeE, key = `${node}|${l}`;
-    let c = consensus.get(key);
-    if (!c) {
+    let m = meanAt.get(key);
+    if (m === undefined) {
       const users = nodes[node].filter((o) => laneOf.get(o.p)[l] !== undefined);
-      const ref = travelTangent(users[0].p, users[0].end);
-      let sum = 0;
-      const signs = new Map();
-      for (const o of users) {
-        const tq = travelTangent(o.p, o.end), sign = ref[0] * tq[0] + ref[1] * tq[1] >= 0 ? 1 : -1;
-        signs.set(`${o.p.id}${o.end}`, sign);
-        sum += sign * laneOf.get(o.p)[l];
-      }
-      c = { mean: sum / users.length, signs };
-      consensus.set(key, c);
+      m = users.reduce((sum, o) => sum + laneOf.get(o.p)[l], 0) / users.length;
+      meanAt.set(key, m);
     }
-    return (c.signs.get(`${p.id}${end}`) || 1) * c.mean;
+    return m;
   };
   for (const p of pieces) {
     const lines = sortedLines(p);
@@ -336,7 +363,7 @@ function trackGeoJson() {
     features.push({ type: "Feature", properties: { k: 0, n: lines.length }, geometry: { type: "LineString", coordinates: p.pts } });
     const lt = Math.min(TRANS_M, total / 2);
     for (const l of lines) {
-      const own = lanes[l], t0 = target(p, "s", l), t1 = target(p, "e", l), color = colorOf(l);
+      const own = p.sigma * lanes[l], t0 = p.sigma * target(p, "s", l), t1 = p.sigma * target(p, "e", l), color = colorOf(l);
       const emit = (o, c) => features.push({ type: "Feature", properties: { k: 1, c: color, o }, geometry: { type: "LineString", coordinates: c } });
       if ((Math.abs(t0 - own) < 0.05 && Math.abs(t1 - own) < 0.05) || lt < 8) { emit(own, p.pts); continue; }
       const steps = Math.max(1, Math.round(lt / TRANS_STEP_M)), cuts = [0];
