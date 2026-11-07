@@ -1109,6 +1109,43 @@ function setupCategories(cfg) {
   }
 }
 
+// Eigener Standort per GPS: blauer Punkt mit Genauigkeitskreis (und Blickrichtung, falls das Geraet sie liefert).
+// Der Knopf unter dem Zoom-Schalter zentriert die Karte auf den Standort und folgt ihm, bis man die Karte
+// verschiebt oder einen Zug antippt (dessen Verfolgung bewegt die Karte selbst, MapLibre schaltet das Folgen dann ab).
+// Das Browser-API gibt es nur in sicheren Kontexten (HTTPS oder localhost): ueber http://<LAN-IP> bleibt der Knopf aus.
+function addLocateControl() {
+  const secure = window.isSecureContext && "geolocation" in navigator;
+  const ctrl = new maplibregl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    fitBoundsOptions: { maxZoom: 15 }, // beim Zentrieren nie naeher als Stadtteil-Massstab, auch bei sehr genauem Signal
+    trackUserLocation: true,
+    showUserHeading: true,
+    showAccuracyCircle: true,
+  });
+  map.addControl(ctrl, "top-right");
+  if (!secure) {
+    const btn = document.querySelector(".maplibregl-ctrl-geolocate");
+    if (btn) {
+      btn.disabled = true;
+      btn.title = "Standort nur über HTTPS verfügbar";
+    }
+    return;
+  }
+  ctrl.on("error", (e) => {
+    // 1 = Zugriff verweigert, 2 = kein Signal, 3 = Zeitueberschreitung
+    const text = { 1: "Standortzugriff verweigert", 2: "Standort nicht verfügbar", 3: "Standort: Zeitüberschreitung" }[e.code] || "Standort nicht verfügbar";
+    const st = document.getElementById("status");
+    const old = st.textContent;
+    st.textContent = text;
+    setTimeout(() => { if (st.textContent === text) st.textContent = old; }, 5000);
+  });
+  // Wurde der Zugriff schon einmal erlaubt, startet die Ortung beim Laden von selbst (kein erneuter Dialog);
+  // sonst erst auf Tipp, damit der Browser nicht ungefragt die Berechtigung abfragt.
+  navigator.permissions?.query({ name: "geolocation" }).then((p) => {
+    if (p.state === "granted") map.once("idle", () => ctrl.trigger());
+  }).catch(() => {});
+}
+
 async function main() {
   setupPanel();
   const cfg = await loadJson("/api/config");
@@ -1132,6 +1169,7 @@ async function main() {
   }
   map = new maplibregl.Map({ container: "map", style, center: HAMBURG, zoom: 10.5, minZoom: 8, attributionControl: { compact: true } });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  addLocateControl();
   window.hvvMap = map;
   window.hvvColorOf = colorOf;
 
