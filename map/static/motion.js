@@ -257,8 +257,9 @@
   //
   // Zuege, die auf dem Bildschirm naeher als `thresholdM` beieinander liegen (zusammen an einer Station, auf Parallelgleisen),
   // werden senkrecht uebereinander gestapelt. Haelt mindestens ein Zug an einer Station (`nearAnchor`), sitzt der Stapel ueber dem
-  // Stationspin, damit der Pin frei und anklickbar bleibt. Ergebnis: Versatz je Zug in Pixeln (negativ = nach oben).
-  function stackTargets(items, { thresholdM, stepPx, baseUpPx, nearAnchor }) {
+  // Stationspin, damit der Pin frei und anklickbar bleibt. Gruppen ueber `maxGroup` Zuege werden nicht gestapelt (weit
+  // herausgezoomt liegt eine ganze Stadt uebereinander). Ergebnis: Versatz je Zug in Pixeln (negativ = nach oben).
+  function stackTargets(items, { thresholdM, stepPx, baseUpPx, nearAnchor, maxGroup = 8 }) {
     const out = new Map();
     const parent = items.map((_, i) => i);
     const find = (i) => {
@@ -287,8 +288,8 @@
     });
     for (const group of groups.values()) {
       const anchored = nearAnchor && group.some((it) => it.dwell && nearAnchor(it.mx, it.my));
-      if (group.length === 1 && !anchored) {
-        out.set(group[0].id, 0);
+      if ((group.length === 1 && !anchored) || group.length > maxGroup) {
+        for (const it of group) out.set(it.id, 0);
         continue;
       }
       group.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

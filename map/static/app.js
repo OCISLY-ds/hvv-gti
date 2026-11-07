@@ -738,12 +738,14 @@ function nearStation(mx, my, radiusM) {
 }
 
 // Ueberdeckte Zuege senkrecht stapeln; das Ergebnis (e.sx, e.sy) ist die gezeichnete Position, weich nachgefuehrt
+const STACK_MIN_ZOOM = 12.5;
 let lastStackAt = 0;
 function stackOnScreen(items) {
   const z = map.getZoom(), mpp = metresPerPixel(z, map.getCenter().lat), dot = dotRadius(z), pin = pinRadius(z);
   const stepPx = 2 * dot + 3, nowMs = performance.now(), dt = Math.min(0.1, (nowMs - lastStackAt) / 1000);
   lastStackAt = nowMs;
-  const targets = motion.stackTargets(
+  // Stapeln lohnt erst im Stadtteil-Massstab; weiter herausgezoomt liegen ohnehin ganze Strecken uebereinander
+  const targets = z < STACK_MIN_ZOOM ? new Map() : motion.stackTargets(
     items.map((e) => ({ id: e.id, mx: e.pose.x * KX, my: e.pose.y * KY, dwell: e.pose.dwell })),
     { thresholdM: Math.max(2 * dot, 14) * mpp, stepPx, baseUpPx: pin + dot + 3, nearAnchor: (mx, my) => nearStation(mx, my, Math.max(pin + dot, 12) * mpp) }
   );

@@ -229,3 +229,11 @@ test("trains dwelling at a station are stacked above the pin, even a single one"
   const passing = stack([{ id: "a", mx: 2, my: 0, dwell: false }], { nearAnchor: near });
   assert.equal(passing.get("a"), 0); // durchfahrende Zuege hopsen nicht
 });
+
+test("a huge crowd of trains is not stacked into a column across the screen", () => {
+  const crowd = Array.from({ length: 200 }, (_, i) => ({ id: `t${String(i).padStart(3, "0")}`, mx: i * 5, my: (i % 7) * 3, dwell: false }));
+  const out = stack(crowd);
+  assert.equal(Math.max(...[...out.values()].map(Math.abs)), 0);
+  const few = stack(crowd.slice(0, 5)); // wenige ueberlappende Zuege werden weiterhin gestapelt
+  assert.ok(new Set([...few.values()]).size > 1);
+});
