@@ -23,6 +23,7 @@ SCHEDULE = {
         {
             "from": {"name": "Altona", "id": "Master:1", "depTime": {"date": "07.11.2026", "time": "13:55"}},
             "to": {"name": "Altona", "id": "Master:1", "arrTime": {"date": "07.11.2026", "time": "13:58"}},
+            "line": {"name": "Umstiegsfußweg", "type": {"simpleType": "CHANGE"}},
         },
         {
             "from": {"name": "Altona", "id": "Master:1", "depTime": {"date": "07.11.2026", "time": "14:00"}},

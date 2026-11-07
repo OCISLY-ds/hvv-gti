@@ -35,6 +35,7 @@ CACHE_S = 600
 # Messung je Linienart (hvv_stop_event zusaetzlich fuer Ausfaelle)
 MEASUREMENTS = {"S": "hvv_network_stop", "U": "hvv_network_stop", "X": "hvv_xbus_stop", "R": "hvv_regional_stop"}
 CANCEL_MEASUREMENT = "hvv_stop_event"
+WALK_TYPES = {"CHANGE", "FOOTPATH", "BICYCLE"}  # Elemente der GTI-Route, die keine Fahrt sind
 
 
 def line_mode(name: str | None) -> str | None:
@@ -377,7 +378,8 @@ def normalize_route(schedule: dict) -> list[dict]:
             "dep": dep,
             "arr": arr,
         }
-        if line.get("name"):
+        walking = (line.get("type") or {}).get("simpleType") in WALK_TYPES  # Umstiegsfussweg u. a. kommen als "Linie" an
+        if line.get("name") and not walking:
             legs.append(
                 {
                     **base,
