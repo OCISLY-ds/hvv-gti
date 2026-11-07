@@ -53,18 +53,41 @@ function vectorStyle(url) {
   };
 }
 
-function rasterStyle() {
+// Hintergrundkarte ohne Schluessel, wenn keine lokale hamburg.pmtiles vorliegt: OpenFreeMap (Vektorkacheln im OpenMapTiles-Schema,
+// https://openfreemap.org). Die frueheren CARTO-Rasterkacheln verlangen inzwischen einen API-Schluessel.
+function openFreeMapStyle() {
+  const src = "ofm";
+  const L = (id, type, layer, paint, extra) => ({ id, type, source: src, "source-layer": layer, paint, ...extra });
+  const zoomWidth = (z0, w0, z1, w1) => ["interpolate", ["linear"], ["zoom"], z0, w0, z1, w1];
+  const label = (id, classes, minzoom, size) => ({
+    id, type: "symbol", source: src, "source-layer": "place", minzoom, filter: ["in", ["get", "class"], ["literal", classes]],
+    layout: { "text-field": ["coalesce", ["get", "name:de"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": size },
+    paint: { "text-color": "#7f8da3", "text-halo-color": "#16202e", "text-halo-width": 1.2 },
+  });
   return {
     version: 8,
     glyphs: GLYPHS,
     sources: {
-      base: {
-        type: "raster", tileSize: 256,
-        tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
-        attribution: `${OSM_ATTR}, © <a href="https://carto.com/attributions">CARTO</a>`,
+      [src]: {
+        type: "vector", url: "https://tiles.openfreemap.org/planet",
+        attribution: `<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a> ${OSM_ATTR}`,
       },
     },
-    layers: [{ id: "base", type: "raster", source: "base" }],
+    layers: [
+      { id: "bg", type: "background", paint: { "background-color": "#1b2636" } },
+      L("landcover", "fill", "landcover", { "fill-color": ["match", ["get", "class"], ["wood", "grass"], "#1f3a33", "#222f40"] }),
+      L("landuse", "fill", "landuse", { "fill-color": ["match", ["get", "class"], ["park", "cemetery", "playground", "pitch"], "#1f3a33", ["industrial", "commercial", "retail"], "#212c3b", "#222f40"] }),
+      L("park", "fill", "park", { "fill-color": "#1f3a33", "fill-opacity": 0.8 }),
+      L("water", "fill", "water", { "fill-color": "#0f2a44" }),
+      L("waterway", "line", "waterway", { "line-color": "#0f2a44", "line-width": zoomWidth(8, 0.8, 14, 4) }),
+      L("building", "fill", "building", { "fill-color": "#26344a" }, { minzoom: 13 }),
+      L("road", "line", "transportation", {
+        "line-color": ["match", ["get", "class"], ["motorway", "trunk"], "#5b6b85", ["primary", "secondary"], "#43526b", "#33415a"],
+        "line-width": zoomWidth(8, 0.4, 16, 3),
+      }, { filter: ["!", ["in", ["get", "class"], ["literal", ["path", "rail", "transit", "pedestrian", "track", "raceway", "ferry"]]]] }),
+      label("place-large", ["city", "town"], 6, zoomWidth(6, 11, 13, 16)),
+      label("place-small", ["suburb", "village", "quarter"], 11, zoomWidth(11, 10, 15, 14)),
+    ],
   };
 }
 
@@ -1103,7 +1126,7 @@ async function main() {
     maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
     style = vectorStyle(new URL(cfg.tilesUrl, location.href).href);
   } else {
-    style = rasterStyle();
+    style = openFreeMapStyle();
   }
   map = new maplibregl.Map({ container: "map", style, center: HAMBURG, zoom: 10.5, minZoom: 8, attributionControl: { compact: true } });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
