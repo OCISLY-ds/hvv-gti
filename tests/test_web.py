@@ -293,7 +293,7 @@ class VehicleFeedTest(unittest.TestCase):
             feed = web.VehicleFeed(client, Path(tmp), refresh_s=60)
             feed.vehicles()
             feed.vehicles()
-            self.assertEqual(client.calls, 1)
+            self.assertEqual(client.calls, 2)  # ein Abruf fuer die Karte, einer fuer die ergaenzten Abschnitte (S5 Dollern - Stade)
 
 
 if __name__ == "__main__":

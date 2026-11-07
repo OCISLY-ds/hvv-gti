@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from .client import TZ, GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .config import Config, Corridor
+from .dedupe import drop_ghosts
 from .influx import line_protocol
 
 log = logging.getLogger("hvv_gti.trains")
@@ -153,7 +154,7 @@ def collect_trains(
         except GtiError as exc:
             log.error("getVehicleMap %s: %s", vehicle_type, exc)
             continue
-        journeys = [j for j in response.get("journeys", []) if j.get("line", {}).get("name") in wanted]
+        journeys = [j for j in drop_ghosts(response.get("journeys", [])) if j.get("line", {}).get("name") in wanted]
         parsed = [parse_journey(j, corridor, now_ts) for j in journeys]
         log.info("getVehicleMap %s: %d Fahrten, %d davon im Korridor %s", vehicle_type, len(journeys), sum(1 for p in parsed if p), corridor.name)
         for chunk in parsed:

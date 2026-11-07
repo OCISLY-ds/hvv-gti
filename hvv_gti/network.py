@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .config import Config, Network
+from .dedupe import drop_ghosts
 from .influx import line_protocol
 
 log = logging.getLogger("hvv_gti.network")
@@ -89,7 +90,7 @@ def _collect(client: GtiClient, network: Network | None, now: datetime | None, d
     except GtiError as exc:
         log.error("getVehicleMap %s: %s", network.name, exc)
         return []
-    journeys = response.get("journeys", [])
+    journeys = drop_ghosts(response.get("journeys", []))  # verspaetete Fahrten liefert die GTI auch als Geisterfahrt mit 0 min
     lines: list[str] = []
     for journey in journeys:
         if network.line_prefixes and not (journey.get("line", {}).get("name") or "").startswith(network.line_prefixes):

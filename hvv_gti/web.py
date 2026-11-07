@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
 from .icons import CONTENT_TYPES, IconStore
+from .dedupe import drop_ghosts, max_delay, trip_keys
+from .extensions import EXTENSIONS, Seed, extend
 from .geometry import clean
 from .signals import SignalIndex
 
@@ -56,10 +58,7 @@ class TripIds:
 
     @staticmethod
     def keys(line: str, segments: list[dict]) -> list[tuple]:
-        return [
-            (line, f"{s['startStopPointKey']}>{s['endStopPointKey']}", (s["startDateTime"] - 60 * (s.get("realtimeDelay") or 0)) // 60)
-            for s in segments
-        ]
+        return trip_keys(line, segments)
 
     def resolve(self, trips: list[tuple[str, list[dict]]], now: int) -> list[str | None]:
         """Eine ID je Fahrt (Linie, Segmente); None fuer Dubletten, die im selben Abruf schon vergeben wurden."""
@@ -162,6 +161,7 @@ class VehicleFeed:
         self._state_lock = threading.Lock()
         self._course_lock = threading.Lock()
         self.trips = TripIds()
+        self.seed = Seed()
         self._courses: dict[str, tuple[float, list[dict]]] = {}
         self._load()
 
@@ -309,7 +309,11 @@ class VehicleFeed:
             (lon1, lat1), (lon2, lat2), now, now + window, without_coords=False, vehicle_types=self.vehicle_types
         )
         candidates = []
+        journeys_in = self._extension_journeys(now)  # zuerst: das weitere Zeitfenster kennt mehr Abschnitte derselben Fahrt
         for j in response.get("journeys", []):
+            extend(j, self.seed)
+        journeys_in += response.get("journeys", [])
+        for j in drop_ghosts(journeys_in):
             line = j.get("line", {}).get("name") or "?"
             if j.get("vehicleType") == "R_BAHN" and not REGIONAL_LINE.match(line):
                 continue
@@ -343,6 +347,25 @@ class VehicleFeed:
             )
         self._save(force=first)
         return {"now": now, "fetched": now, "journeys": journeys}
+
+    def _extension_journeys(self, now: int) -> list[dict]:
+        """Abgeschnittene Fahrten (S5 Dollern - Stade) aus einem eigenen Abruf mit weitem Zeitfenster und kleinem Gebiet: die
+        ergaenzten Abschnitte liegen vor bzw. hinter dem Zeitfenster der Hauptabfrage, die Fahrt waere dort sonst nicht zu sehen."""
+        if not EXTENSIONS or not self.seed.stations or "S_BAHN" not in self.vehicle_types:
+            return []
+        xs, ys = [s["x"] for s in self.seed.stations.values()], [s["y"] for s in self.seed.stations.values()]
+        window = max(e.window_s for e in EXTENSIONS)
+        try:
+            response = self.client.get_vehicle_map(
+                (min(xs) - 0.1, min(ys) - 0.1), (max(xs) + 0.1, max(ys) + 0.1), now - window, now + window,
+                without_coords=False, vehicle_types=["S_BAHN"],
+            )
+        except GtiAuthError:
+            raise
+        except (GtiPermissionError, GtiError) as exc:
+            log.warning("getVehicleMap (Verlaengerungen): %s", exc)
+            return []
+        return [j for j in response.get("journeys", []) if extend(j, self.seed)]
 
     def vehicles(self) -> dict | None:
         """Aktueller Stand; veraltete Daten liefert der Cache weiter, waehrend genau ein Thread nachlaedt."""
@@ -383,12 +406,16 @@ class VehicleFeed:
                 response = self.client.get_vehicle_map(
                     (lon1, lat1), (lon2, lat2), now - COURSE_WINDOW_S, now + COURSE_WINDOW_S, without_coords=True, vehicle_types=[vehicle_type]
                 )
-                cached = self._courses[vehicle_type] = (time.monotonic(), response.get("journeys", []))
-            best, journey = 0, None
+                found = drop_ghosts(response.get("journeys", []))
+                for candidate in found:
+                    extend(candidate, self.seed)
+                cached = self._courses[vehicle_type] = (time.monotonic(), found)
+            best, journey = (0, 0), None
             for candidate in cached[1]:
                 line = candidate.get("line", {}).get("name") or "?"
-                score = self.trips.match(journey_id, line, candidate.get("segments", []))
-                if score > best:
+                segments = candidate.get("segments", [])
+                score = (self.trips.match(journey_id, line, segments), max_delay(segments))
+                if score[0] > best[0] or (score[0] == best[0] and score[0] > 0 and score[1] > best[1]):
                     best, journey = score, candidate
         course = build_course(journey) if journey else None
         if course:
