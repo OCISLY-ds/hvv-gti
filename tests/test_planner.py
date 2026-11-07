@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from hvv_gti import planner
-from hvv_gti.planner import Planner, Reliability, TZ, line_mode, normalize_route, pick_window
+from hvv_gti.planner import Planner, Reliability, TZ, flux_str, line_mode, normalize_route, pick_window
 
 from .fakes import FakeGti
 from .test_integration import client_for
@@ -58,6 +58,11 @@ def reader(delays, cancel=None):
 
 
 class PlannerHelperTests(unittest.TestCase):
+    def test_flux_str_keeps_umlauts_and_escapes_quotes_and_interpolation(self):
+        self.assertEqual(flux_str("Poppenbüttel"), '"Poppenbüttel"')
+        self.assertEqual(flux_str('a"b\\c'), '"a\\"b\\\\c"')
+        self.assertEqual(flux_str("${x}"), '"\\${x}"')
+
     def test_line_mode(self):
         self.assertEqual([line_mode(x) for x in ("S5", "U3", "X35", "RE5", "RB81", "234", "A1", None)], ["S", "U", "X", "R", "R", None, None, None])
 
@@ -99,6 +104,20 @@ class ReliabilityTests(unittest.TestCase):
         self.assertNotIn("ontimePct", out)
         self.assertEqual((out["cancelPct"], out["cancelCoverage"]), (10.0, "1 von 2 Abschnitten"))
 
+    def test_influx_failure_does_not_break_the_route(self):
+        class Broken:
+            def delays(self, *args):
+                raise OSError("Influx: HTTP Error 400")
+
+            def cancel_rate(self, line):
+                raise OSError("Influx: down")
+
+        responses = {"getRoute": {"returnCode": "OK", "realtimeSchedules": [SCHEDULE]}}
+        with FakeGti(responses=responses) as gti:
+            route = Planner(client_for(gti), Reliability(Broken())).route("Master:85950", "Master:2", datetime.now(TZ))
+        self.assertEqual(len(route["routes"]), 1)
+        self.assertTrue(route["routes"][0]["reliability"]["unavailable"])
+
     def test_without_reader_nothing_is_claimed(self):
         out = Reliability(None).assess(normalize_route(SCHEDULE), self.when)
         self.assertEqual(out, {"legsWithData": 0, "legs": 2})
@@ -126,6 +145,8 @@ class GtiPlannerTests(unittest.TestCase):
             data = p.departures("Master:1")
             self.assertEqual([(d["line"], d["mode"], d["cancelled"]) for d in data["departures"]], [("X35", "X", True), ("S1", "S", False)])
             self.assertEqual(data["departures"][1]["delayMin"], 2)
+            data_station = data.get("station")
+            self.assertIsNone(data_station)  # der Name kommt von der Karte, nicht von der Schnittstelle
             route = p.route("Master:85950", "Master:2", now_min)
             self.assertEqual(len(route["routes"]), 1)
             self.assertEqual([l["line"] for l in route["routes"][0]["legs"]], ["S1", None, "S11"])

@@ -56,6 +56,11 @@ def line_mode(name: str | None) -> str | None:
 # ---- Influx ----
 
 
+def flux_str(value: str) -> str:
+    """Flux-Zeichenkette; json.dumps waere falsch, weil es Umlaute als \\uXXXX schreibt (Flux kennt das nicht)."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("${", "\\${") + '"'
+
+
 class InfluxReader:
     def __init__(self, url: str, org: str, bucket: str, token: str, timeout: float = 20.0):
         self.url = f"{url.rstrip('/')}/api/v2/query?{urllib.parse.urlencode({'org': org})}"
@@ -86,12 +91,12 @@ class InfluxReader:
 
     def delays(self, measurement: str, line: str, station: str | None) -> list[tuple[float, float]]:
         """(Zeitstempel, Verspaetung in s) der letzten 30 Tage; ohne `station` ueber die ganze Linie (jede 10. Messung)."""
-        filt = f'r._measurement == "{measurement}" and r._field == "delay_s" and r.line == {json.dumps(line)}'
+        filt = f'r._measurement == "{measurement}" and r._field == "delay_s" and r.line == {flux_str(line)}'
         if station:
-            filt += f" and r.station == {json.dumps(station)}"
+            filt += f" and r.station == {flux_str(station)}"
         sample = "" if station else "|> group() |> sample(n: 10)"
         flux = (
-            f'from(bucket: {json.dumps(self.bucket)}) |> range(start: {LOOKBACK}) |> filter(fn: (r) => {filt}) {sample} '
+            f'from(bucket: {flux_str(self.bucket)}) |> range(start: {LOOKBACK}) |> filter(fn: (r) => {filt}) {sample} '
             '|> keep(columns: ["_time", "_value"]) |> limit(n: 6000)'
         )
         out = []
@@ -104,8 +109,8 @@ class InfluxReader:
 
     def cancel_rate(self, line: str) -> tuple[int, float] | None:
         flux = (
-            f'from(bucket: {json.dumps(self.bucket)}) |> range(start: {LOOKBACK}) '
-            f'|> filter(fn: (r) => r._measurement == "{CANCEL_MEASUREMENT}" and r._field == "cancelled" and r.line == {json.dumps(line)}) '
+            f'from(bucket: {flux_str(self.bucket)}) |> range(start: {LOOKBACK}) '
+            f'|> filter(fn: (r) => r._measurement == "{CANCEL_MEASUREMENT}" and r._field == "cancelled" and r.line == {flux_str(line)}) '
             '|> keep(columns: ["_value"]) |> limit(n: 20000)'
         )
         values = [row["_value"].strip().lower() in ("1", "true") for row in self.query(flux) if "_value" in row]
@@ -320,9 +325,7 @@ class Planner:
                 }
             )
         out.sort(key=lambda d: d["planned"] + (d["delayMin"] or 0) * 60)
-        station = response.get("station") or {}
         data = {
-            "station": station.get("combinedName") or station.get("name") or station_id,
             "now": time.time(),
             "departures": [d for d in out if d["planned"] + (d["delayMin"] or 0) * 60 >= time.time() - 60][:count],
         }
@@ -349,7 +352,11 @@ class Planner:
         for schedule in schedules[:count]:
             legs = normalize_route(schedule)
             dep = parse_iso(schedule.get("plannedDepartureTime"))
-            assessed = self.reliability.assess(legs, dep or local)
+            try:
+                assessed = self.reliability.assess(legs, dep or local)
+            except OSError as exc:  # Verbindungen gibt es auch ohne Messdaten
+                log.warning("Zuverlaessigkeit nicht berechnet: %s", exc)
+                assessed = {"legsWithData": 0, "legs": sum(1 for leg in legs if leg.get("line")), "unavailable": True}
             real_dep, real_arr = parse_iso(schedule.get("realDepartureTime")), parse_iso(schedule.get("realArrivalTime"))
             arr = parse_iso(schedule.get("plannedArrivalTime"))
             routes.append(

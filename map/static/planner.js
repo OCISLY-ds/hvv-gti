@@ -87,7 +87,6 @@
     const load = async () => {
       try {
         const data = await getJson(`/api/departures?id=${encodeURIComponent(station.k)}&n=20`);
-        head.firstChild.textContent = data.station || station.n;
         renderDepartures(list, data);
       } catch (e) {
         list.replaceChildren(node("div", "empty err", e.message));
@@ -185,10 +184,10 @@
       box.append(meter("Pünktlich am Ziel (≤ 3 min)", rel.ontimePct, "Wahrscheinlichkeit, dass die Fahrt höchstens 3 Minuten verspätet ankommt."));
       if (rel.transfers) box.append(meter(`Anschluss${rel.transfers > 1 ? "züge" : ""} erreicht`, rel.connectionPct, `${rel.transfers} Umstieg${rel.transfers > 1 ? "e" : ""} nach Fahrplan.`));
     } else {
-      box.append(node("div", "hint", rel.legs ? `Für ${rel.legsWithData} von ${rel.legs} Abschnitten liegen Messdaten vor – keine Gesamtprognose möglich.` : "Keine Fahrt mit Linie."));
+      box.append(node("div", "hint", rel.unavailable ? "Messdaten derzeit nicht erreichbar – Verbindung ohne Zuverlässigkeitsangabe." : rel.legs ? `Für ${rel.legsWithData} von ${rel.legs} Abschnitten liegen Messdaten vor – keine Gesamtprognose möglich.` : "Keine Fahrt mit Linie."));
     }
     if (rel.cancelPct !== undefined) box.append(meter("Ausfallrisiko", rel.cancelPct, `Gemessen für ${rel.cancelCoverage}; für die übrigen Linien erfasst die Karte keine Ausfälle.`, true));
-    else box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
+    else if (!rel.unavailable) box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
     return box;
   }
 
