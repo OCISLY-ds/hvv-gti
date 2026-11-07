@@ -219,11 +219,11 @@ python3 -m unittest discover -s tests -t .
 git clone -b dev https://github.com/OCISLY-ds/hvv-gti.git /opt/hvv-gti && cd /opt/hvv-gti
 mkdir -p data map/data                      # als Benutzer mit UID 1000, sonst legt Docker sie als root an
 cp .env.example .env && chmod 600 .env      # HVV_GTI_USER und HVV_GTI_PASSWORD eintragen
-# optional vom ersten Host kopieren (gelernte Gleise, Signale, Vektorkacheln); ohne tracks.json lernt die Karte sie neu:
-#   scp pi:hvv-gti/map/data/{tracks.json,signals.json,hamburg.pmtiles} map/data/
 docker compose up -d --build hvv-map        # Test auf Port 8090: curl -I http://localhost:8090
 cp deploy/docker-compose.override.flo-mc.yml docker-compose.override.yml   # Port 8100
 docker compose up -d hvv-map
 ```
+
+Ein frischer Host braucht nichts vom ersten Host: Beim Start ohne `map/data/tracks.json` lernt der Server die Gleise aus dem Fenster von ±90 Minuten um jetzt (die Fahrzeugkarte der HVV liefert nur diesen Bereich; rund 1000 Abschnitte in etwa 10 Sekunden, `--learn-span 0` schaltet das ab) und holt die Linienlogos samt Linienfarben im Hintergrund nach. Seltene Linien (Nachtverkehr, Wochenende, Umland) kommen mit der Zeit dazu. Die Signalpositionen liegen als Startdatei in `map/seed/signals.json` (© OpenStreetMap-Mitwirkende, ODbL); eine eigene `map/data/signals.json` (`scripts/fetch_signals.py`) hat Vorrang. Ohne `hamburg.pmtiles` zeigt die Karte die dunklen CARTO-Rasterkacheln.
 
 Selbstaktualisierung per Cron (`*/5 * * * * /opt/hvv-gti/deploy/pull-and-build.sh`): holt den Branch und baut `hvv-map` nur bei neuen Commits neu. Abfahrten, Routen und Stationssuche sind je Client-IP auf 60 Anfragen pro Minute begrenzt (`serve-map --planner-rate`, hinter einem Proxy gilt `X-Forwarded-For`), damit die Karte bei öffentlichem Zugang das gemeinsame GTI-Konto nicht aufbraucht.

@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY hvv_gti ./hvv_gti
 COPY map/static ./map/static
+COPY map/seed ./map/seed
 
 RUN useradd --system --no-create-home hvv
 USER hvv

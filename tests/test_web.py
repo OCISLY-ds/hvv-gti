@@ -163,6 +163,27 @@ class BuildCourseTest(unittest.TestCase):
 
 
 class VehicleFeedTest(unittest.TestCase):
+    def test_learn_reads_the_past_and_the_future_window_and_saves(self):
+        class Recording(FakeClient):
+            def get_vehicle_map(self, *args, **kwargs):
+                self.windows = getattr(self, "windows", []) + [args[2:4]]
+                return super().get_vehicle_map(*args, **kwargs)
+
+        soon = int(time.time()) + 10
+        with tempfile.TemporaryDirectory() as tmp:
+            client = Recording({"journeys": [journey("S5", soon)]})
+            feed = web.VehicleFeed(client, Path(tmp))
+            self.assertEqual(feed.learn(span_s=600), 1)
+            (b1, e1), (b2, e2) = client.windows
+            self.assertEqual((e1 - b1, e2 - b2, e1 <= b2 + 1), (600, 600, True))  # zurueck und voraus, lueckenlos
+            self.assertIn("A:1>B:1", json.loads((Path(tmp) / "tracks.json").read_text())["tracks"])
+
+    def test_signals_fall_back_to_the_seed_file_in_the_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = web.VehicleFeed(FakeClient({}), Path(tmp))
+        self.assertIsNotNone(feed.signals)
+        self.assertGreater(len(feed.signals.signals), 1000)
+
     def _gap_journey(self, line, soon, a="SA", b="SB", sp_a="A:2", sp_b="B:2"):
         seg = journey(line, soon)["segments"][0]
         seg.update({"startStationKey": a, "endStationKey": b, "startStopPointKey": sp_a, "endStopPointKey": sp_b, "track": None})

@@ -32,6 +32,7 @@ VEHICLE_TYPES = {mode: vehicle_type for vehicle_type, mode in MODES.items()}
 COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt auch den RE5 Cuxhaven - Hamburg ab
 COURSE_CACHE_S = 60
 TRACKS_SAVE_INTERVAL_S = 300
+SEED_SIGNALS = Path(__file__).resolve().parent.parent / "map" / "seed" / "signals.json"  # OSM-Signale als Startdatei im Image
 KX_M = math.cos(math.radians(53.55)) * 111320  # Meter je Grad Laenge/Breite bei Hamburg
 KY_M = 110540
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
@@ -146,7 +147,7 @@ class VehicleFeed:
         self.bbox = bbox
         self.vehicle_types = list(vehicle_types)
         self.tracks_path = data_dir / "tracks.json"
-        self.signals = SignalIndex.load(data_dir / "signals.json")
+        self.signals = SignalIndex.load(data_dir / "signals.json") or SignalIndex.load(SEED_SIGNALS)
         self.tracks: dict[str, dict] = {}
         self.stations: dict[str, dict] = {}
         self.version = 0
@@ -262,6 +263,43 @@ class VehicleFeed:
             self.version += 1
         return key
 
+    def _learn_segment(self, line: str, s: dict) -> str | None:
+        """Gleis eines Segments merken (oder, wenn die Daten keine Geometrie haben, ueberbruecken); liefert den Gleisschluessel."""
+        points = (s.get("track") or {}).get("track") or []
+        if len(points) >= 4:
+            key = f"{s['startStopPointKey']}>{s['endStopPointKey']}"
+            self._remember(key, points, line, s["startStationKey"], s["startStationName"], s["endStationKey"], s["endStationName"])
+            return key
+        return self._bridge(line, s)
+
+    def learn(self, span_s: int = 5400) -> int:
+        """Gleise einmalig vorab lernen (frischer Host ohne tracks.json): ein Abruf je Richtung fuer `span_s` Sekunden zurueck und
+        voraus. Die HVV-Daten liefern nur etwa 90 Minuten um jetzt herum, weiter in Zukunft oder Vergangenheit kommt nichts;
+        alles Seltene (Nachtlinien, Wochenende, Umland) lernt die laufende Karte danach nach und nach. Rueckgabe: neue Gleise."""
+        (lon1, lat1, lon2, lat2) = self.bbox
+        now, before = int(time.time()), len(self.tracks)
+        for begin, end in ((now - span_s, now), (now, now + span_s)):
+            with self._fetch_lock:  # nacheinander mit den normalen Abrufen
+                try:
+                    response = self.client.get_vehicle_map(
+                        (lon1, lat1), (lon2, lat2), begin, end, without_coords=False, vehicle_types=self.vehicle_types
+                    )
+                except GtiAuthError:
+                    raise
+                except (GtiPermissionError, GtiError) as exc:
+                    log.warning("Gleise vorlernen: %s", exc)
+                    continue
+                with self._state_lock:
+                    for j in response.get("journeys", []):
+                        line = j.get("line", {}).get("name") or "?"
+                        if j.get("vehicleType") == "R_BAHN" and not REGIONAL_LINE.match(line):
+                            continue
+                        for s in j.get("segments", []):
+                            self._learn_segment(line, s)
+        self._save(force=True)
+        log.info("Gleise vorgelernt: %d neue, jetzt %d Abschnitte", len(self.tracks) - before, len(self.tracks))
+        return len(self.tracks) - before
+
     def _fetch(self, first: bool) -> dict:
         now = int(time.time())
         window = FIRST_FILL_WINDOW_S if first else self.window_s
@@ -277,13 +315,7 @@ class VehicleFeed:
             segs = sorted(j.get("segments", []), key=lambda s: s["startDateTime"])
             out = []
             for s in segs:
-                points = (s.get("track") or {}).get("track") or []
-                key = None
-                if len(points) >= 4:
-                    key = f"{s['startStopPointKey']}>{s['endStopPointKey']}"
-                    self._remember(key, points, line, s["startStationKey"], s["startStationName"], s["endStationKey"], s["endStationName"])
-                else:
-                    key = self._bridge(line, s)
+                key = self._learn_segment(line, s)
                 if s["endDateTime"] < now - 30 or s["startDateTime"] > now + self.window_s:
                     continue
                 out.append(

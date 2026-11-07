@@ -109,6 +109,16 @@ def cmd_icons(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def _background(name: str, fn, *args) -> None:
+    def run() -> None:
+        try:
+            fn(*args)
+        except Exception:  # der Hintergrundlauf darf die Karte nie beenden
+            logging.getLogger("hvv_gti").exception("%s fehlgeschlagen", name)
+
+    threading.Thread(target=run, name=name, daemon=True).start()
+
+
 def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -125,7 +135,13 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     token = cfg.influx_read_token or cfg.influx_token
     reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
     planner = Planner(client, Reliability(reader))
-    app = web.MapApp(feed, IconStore(args.icons_dir, client), Path(args.static_dir), data_dir, planner, args.planner_rate)
+    icons = IconStore(args.icons_dir, client)
+    app = web.MapApp(feed, icons, Path(args.static_dir), data_dir, planner, args.planner_rate)
+    # Frischer Host: Gleise und Linienlogos (daraus die Linienfarben) im Hintergrund nachholen, die Karte laeuft sofort
+    if args.learn_span and not feed.tracks:
+        _background("Gleise vorlernen", feed.learn, args.learn_span)
+    if not any(Path(args.icons_dir).glob("*.svg")):
+        _background("Linienlogos laden", icons.prefetch)
     stop_event = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop_event.set())
@@ -178,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", type=float, default=30.0, help="Sekunden zwischen GTI-Abfragen")
     p.add_argument("--window", type=int, default=300, help="Vorausschau in Sekunden")
     p.add_argument("--no-xbus", action="store_true", help="die X-Busse (Xpressbus) nicht abfragen und nicht auf der Karte anbieten")
+    p.add_argument("--learn-span", type=int, default=5400, help="beim ersten Start ohne tracks.json Gleise aus +-N Sekunden um jetzt vorlernen (0 = aus)")
     p.add_argument("--planner-rate", type=int, default=60, help="Abfahrten/Routen/Stationssuche je Client-IP und Minute (0 = unbegrenzt)")
     p.add_argument("--static-dir", default="map/static")
     p.add_argument("--data-dir", default="map/data")
