@@ -9,7 +9,7 @@
     "oepnv"
   ],
   "schemaVersion": 41,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "graphTooltip": 1,
   "timezone": "Europe/Berlin",
@@ -169,6 +169,12 @@
       "title": "API-Nutzung",
       "type": "link",
       "url": "/d/hvv-api-nutzung",
+      "icon": "dashboard"
+    },
+    {
+      "title": "Fähren",
+      "type": "link",
+      "url": "/d/hvv-faehren",
       "icon": "dashboard"
     }
   ],
