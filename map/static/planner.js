@@ -165,6 +165,7 @@
 
   const pct = (v) => `${String(v).replace(".", ",")} %`;
   const tone = (v) => (v >= 90 ? "good" : v >= 75 ? "mid" : "bad");
+  const num = (v) => String(v).replace(".", ",");
 
   function meter(label, value, hint, invert) {
     const row = node("div", "meter");
@@ -182,7 +183,7 @@
   const minTransfer = () => Number($("pl-min").value) || 0;
   const minLabel = (t) => (t === 0 ? "nur Fahrplan" : `mind. ${t} min`);
 
-  function reliability(rel, minutes) {
+  function reliability(rel) {
     const box = node("div", "rel");
     const by = (rel.byMinTransfer || {})[String(minTransfer())] || rel; // Werte zur gewählten Mindest-Umsteigezeit
     if (by.ontimePct !== undefined) {
@@ -196,52 +197,193 @@
     return box;
   }
 
-  function transferRow(tr) {
-    const t = minTransfer();
-    const catchPct = tr.catchByMin ? tr.catchByMin[String(t)] : undefined;
-    const row = node("div", "leg xfer");
-    row.append(node("span", "t", hhmm(tr.arr)));
-    const mid = node("span", "mid");
-    const wait = tr.waitMin <= 0 ? "keine Wartezeit" : `${tr.waitMin} min Zeit`;
-    const platforms = tr.arrPlatform && tr.depPlatform && tr.arrPlatform !== tr.depPlatform ? ` · ${tr.arrPlatform} → ${tr.depPlatform}` : tr.depPlatform ? ` · ${tr.depPlatform}` : "";
-    mid.append(node("span", "d1 xt", `Umstieg ${tr.station}: ${wait}${tr.walkMin ? ` (davon ${tr.walkMin} min Fußweg)` : ""}${platforms}`));
-    if (catchPct !== undefined) {
-      const hint = node("span", "d2 " + (catchPct >= 90 ? "xok" : catchPct >= 60 ? "xmid" : "xbad"), `Anschluss wird zu ca. ${pct(catchPct)} erreicht`);
-      const reserve = tr.waitMin - Math.max(tr.walkMin || 0, t);
-      hint.title = reserve > 0
-        ? `Reserve: ${reserve} min (Zeit bis zur Abfahrt abzüglich ${t > (tr.walkMin || 0) ? "gewählter Mindest-Umsteigezeit" : "Fußweg"}). Ein Zubringer, der ${reserve} min oder mehr zu spät kommt, gilt als verpasst. Aus den gemessenen Verspätungen von Zubringer und Anschlusszug.`
-        : "Keine Reserve: schon ein pünktlicher Zubringer reicht nicht für die gewählte Umsteigezeit.";
-      mid.append(hint);
+  // ---- Zeitleiste im Stil der HVV-App ----
+
+  const SVG = {
+    walk: '<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="13" cy="4.5" r="2.2" fill="currentColor"/><path d="M10.5 22l1.6-7.2-2.4-2.3v-4.2l-1.9 2.3-1.9-1.2 3.4-4.4c.6-.7 1.3-1 2.2-.9 1.5.1 2.3 1 3 2.6.7 1.6 1.9 2.6 3.6 2.9l-.4 2c-2.2-.2-3.8-1.1-4.9-2.7V13l2.6 2.4 1 6.6-2 .3-.9-4.7-1.1 4.6z" fill="currentColor"/></svg>',
+    swap: '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M7 7h12M7 7l3-3M7 7l3 3M17 17H5m12 0l-3-3m3 3l-3 3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    chevron: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 9l7 7 7-7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    live: '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M3 11a7 7 0 0 1 7-7M3 7.5A4 4 0 0 1 6.5 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" transform="translate(2 1)"/></svg>',
+  };
+  const icon = (name, cls) => {
+    const n = node("span", cls || "rt-ico");
+    n.innerHTML = SVG[name]; // nur feste Zeichenketten aus SVG, keine Daten
+    return n;
+  };
+
+  const delayClass = (min) => (min >= 5 ? "rt-late2" : min >= 1 ? "rt-late1" : "rt-ok");
+  const signed = (min) => (min > 0 ? `+${min}` : min < 0 ? `−${-min}` : "±0");
+
+  function lineColor(leg) {
+    if (leg.mode === "B") return "#d52b1e";
+    return root.hvvColorOf ? root.hvvColorOf(leg.line) : "#5b6785";
+  }
+
+  // Symbol auf der Linie: Bus = roter Rhombus, S/U = Kreis, sonst abgerundetes Schild
+  function railIcon(leg) {
+    const mode = leg.mode;
+    const box = node("span", "rt-mode m-" + mode);
+    box.style.setProperty("--m", mode === "S" ? "#3a9b3a" : mode === "U" ? "#0b5cab" : lineColor(leg));
+    box.append(node("span", "", mode === "B" ? "BUS" : mode === "X" ? "X" : mode === "R" ? "R" : mode === "F" ? "F" : mode));
+    return box;
+  }
+
+  function timeCell(ts, delayMin, cancelled) {
+    const cell = node("div", "rt-time");
+    if (ts === null || ts === undefined) return cell;
+    const known = delayMin !== null && delayMin !== undefined;
+    const big = node("span", "rt-t " + (cancelled ? "rt-late2 gone" : known ? delayClass(delayMin) : ""), hhmm(ts + (known && !cancelled ? delayMin * 60 : 0)));
+    if (known && !cancelled) big.append(icon("live", "rt-live"));
+    cell.append(big);
+    if (known && delayMin !== 0 && !cancelled) {
+      const small = node("span", "rt-plan");
+      small.append(`Plan ${hhmm(ts)} `, node("b", delayClass(delayMin), `${signed(delayMin)} min`));
+      cell.append(small);
     }
-    row.append(mid);
+    return cell;
+  }
+
+  function stopRow(kind, ts, delayMin, name, platform, cancelled) {
+    const row = node("div", "tl " + kind);
+    const rail = node("div", "rail");
+    const body = node("div", "body");
+    const head = node("div", "sname");
+    head.append(node("b", "", name || "–"));
+    if (platform) head.append(node("span", "plat", platform));
+    body.append(head);
+    row.append(timeCell(ts, delayMin, cancelled), rail, body);
     return row;
   }
 
-  function legRow(leg) {
-    const row = node("div", leg.line ? "leg" : "leg walk");
-    if (!leg.line) {
-      row.append(node("span", "t", hhmm(leg.dep)), node("span", "walkt", `Fußweg ${leg.walkMin} min`));
-      return row;
+  function rideCard(leg) {
+    const card = node("div", "rt-card");
+    card.style.setProperty("--c", lineColor(leg));
+    card.append(stopRow("dep", leg.dep, leg.depDelayMin, leg.from.name, leg.from.platform, leg.cancelled));
+
+    const mid = node("div", "tl mid");
+    const rail = node("div", "rail");
+    rail.append(railIcon(leg));
+    const body = node("div", "body");
+    const pill = node("div", "rt-pill" + (leg.cancelled ? " gone" : ""));
+    pill.append(badge(leg.line, leg.mode), node("span", "", `Richtung ${leg.direction || "–"}`));
+    body.append(pill);
+    if (leg.cancelled) body.append(node("div", "rt-warn", "Diese Fahrt fällt aus."));
+
+    const facts = [];
+    if (leg.stopCount) facts.push(`Fahre ${leg.stopCount} Haltestelle${leg.stopCount === 1 ? "" : "n"}`);
+    const ride = leg.durationMin !== null && leg.durationMin !== undefined ? ` (${leg.durationMin} min)` : "";
+    const details = node("div", "rt-details");
+    details.hidden = true;
+    const hasDetails = (leg.stops && leg.stops.length) || (leg.notices && leg.notices.length) || leg.vehicle || leg.carrier;
+    const toggle = node(hasDetails ? "button" : "div", "rt-ride");
+    toggle.append(node("span", "", `${facts[0] || "Fahrt"}${ride}`));
+    if (hasDetails) {
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.append(icon("chevron", "rt-chev"));
+      toggle.onclick = () => {
+        details.hidden = !details.hidden;
+        toggle.setAttribute("aria-expanded", String(!details.hidden));
+        toggle.classList.toggle("open", !details.hidden);
+      };
     }
-    row.append(node("span", "t", hhmm(leg.dep)), badge(leg.line, leg.mode));
-    const mid = node("span", "mid");
-    mid.append(node("span", "d1", `${leg.from.name} → ${leg.to.name}`));
-    const sub = [`Richtung ${leg.direction}`];
-    if (leg.from.platform) sub.push(`ab ${leg.from.platform}`);
-    mid.append(node("span", "d2", sub.join(" · ")));
-    const arrive = [`an ${hhmm(leg.arr)}`];
-    if (leg.to.platform) arrive.push(leg.to.platform);
-    mid.append(node("span", "d2 arr", arrive.join(" · ")));
-    if (leg.stats && leg.stats.alight) {
-      const a = leg.stats.alight;
-      const s = node("span", "d2 stat", `${leg.line}: pünktlich ${pct(a.ontimePct)} · Ø ${String(a.avgMin).replace(".", ",")} min · n=${a.n} (${a.scope})`);
-      s.title = `Zeitraum: ${a.window}. Verspätung am Ausstiegshalt, gemessen von dieser Karte.`;
-      mid.append(s);
+    body.append(toggle);
+
+    if (leg.stats && (leg.stats.alight || leg.stats.cancelRate !== null && leg.stats.cancelRate !== undefined)) {
+      const st = leg.stats, bits = [];
+      if (st.alight) bits.push(`${leg.line} pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}`);
+      if (st.cancelRate !== null && st.cancelRate !== undefined) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
+      const line = node("div", "rt-stat", bits.join(" · "));
+      if (st.alight) line.title = `Zeitraum: ${st.alight.window}, Bezug: ${st.alight.scope}. Verspätung am Ausstiegshalt, gemessen von dieser Karte.`;
+      body.append(line);
     }
-    row.append(mid);
-    const tag = leg.cancelled ? node("span", "dl late2", "Ausfall") : delayTag(leg.depDelayMin);
-    if (tag) row.append(tag);
+
+    const info = [...new Set([leg.vehicle, leg.carrier].filter(Boolean))].join(" · ");
+    if (info) details.append(node("div", "rt-info", info));
+    if (leg.origin) details.append(node("div", "rt-info", `Fahrt ab ${leg.origin}`));
+    for (const stop of leg.stops || []) {
+      const row = node("div", "rt-stop");
+      row.append(node("span", "tm " + (stop.delayMin === null || stop.delayMin === undefined ? "" : delayClass(stop.delayMin)), stop.time ? hhmm(stop.time + (stop.delayMin || 0) * 60) : ""), node("span", "nm", stop.name));
+      if (stop.delayMin) row.append(node("span", "dm " + delayClass(stop.delayMin), signed(stop.delayMin)));
+      details.append(row);
+    }
+    for (const text of leg.notices || []) details.append(node("div", "rt-note", `ⓘ ${text}`));
+    body.append(details);
+    mid.append(node("div", "t"), rail, body);
+    card.append(mid);
+
+    card.append(stopRow("arr", leg.arr, leg.arrDelayMin, leg.to.name, leg.to.platform, leg.cancelled));
+    return card;
+  }
+
+  // Umstieg im Stil der HVV-App ("Steige um (3 min zu Fuß, 1 min warten)") mit Anschluss-Wahrscheinlichkeit und aktueller Reserve
+  function transferRow(tr, feeder, next) {
+    const t = minTransfer();
+    const walk = tr.walkMin || 0;
+    const row = node("div", "tl xfer");
+    const body = node("div", "body");
+    const parts = [];
+    if (walk) parts.push(`${walk} min zu Fuß`);
+    if (tr.waitMin - walk > 0) parts.push(`${tr.waitMin - walk} min warten`);
+    if (!parts.length) parts.push("keine Wartezeit");
+    const text = node("div", "xtext");
+    text.append(icon("swap", "rt-ico"), node("span", "", `Steige um (${parts.join(", ")})`));
+    body.append(text);
+
+    const platforms = [tr.toStation && tr.toStation !== tr.station ? `${tr.station} → ${tr.toStation}` : tr.station];
+    if (tr.arrPlatform && tr.depPlatform) platforms.push(tr.arrPlatform === tr.depPlatform ? tr.arrPlatform : `${tr.arrPlatform} → ${tr.depPlatform}`);
+    body.append(node("div", "xsub", platforms.join(" · ")));
+
+    const catchPct = tr.catchByMin ? tr.catchByMin[String(t)] : undefined;
+    const chips = node("div", "xchips");
+    if (catchPct !== undefined) {
+      const chip = node("span", "chip " + (catchPct >= 90 ? "good" : catchPct >= 60 ? "mid" : "bad"), `Anschluss ca. ${pct(num(catchPct))}`);
+      const reserve = tr.waitMin - Math.max(walk, t);
+      chip.title = reserve > 0
+        ? `Reserve laut Fahrplan: ${reserve} min (Zeit bis zur Abfahrt abzüglich ${t > walk ? "gewählter Mindest-Umsteigezeit" : "Fußweg"}). Ein Zubringer, der ${reserve} min oder mehr zu spät kommt, gilt als verpasst. Aus den gemessenen Verspätungen beider Linien.`
+        : "Keine Reserve: schon ein pünktlicher Zubringer reicht nicht für die gewählte Umsteigezeit.";
+      chips.append(chip);
+    }
+    // aktuelle Prognose: echte Verspätungen von Zubringer und Anschlusszug einrechnen
+    if (feeder && next && feeder.arrDelayMin !== null && feeder.arrDelayMin !== undefined) {
+      const live = tr.waitMin + (next.depDelayMin || 0) - feeder.arrDelayMin - Math.max(walk, t);
+      const cls = live <= 0 ? "bad" : live <= 1 ? "mid" : "good";
+      const label = live <= 0 ? "Nach aktueller Prognose verpasst" : `Aktuell ${live} min Reserve`;
+      if (feeder.arrDelayMin || next.depDelayMin || live <= 0) chips.append(node("span", "chip " + cls, label));
+    }
+    if (chips.childElementCount) body.append(chips);
+    row.append(node("div", "t"), node("div", "rail"), body);
     return row;
+  }
+
+  function walkRow(leg) {
+    const row = node("div", "tl xfer");
+    const body = node("div", "body");
+    const text = node("div", "xtext");
+    text.append(icon("walk", "rt-ico"), node("span", "", `Gehe ${leg.walkMin} min zu Fuß`));
+    body.append(text);
+    if (leg.from.name !== leg.to.name) body.append(node("div", "xsub", `${leg.from.name} → ${leg.to.name}`));
+    row.append(node("div", "t"), node("div", "rail"), body);
+    return row;
+  }
+
+  function routeHeader(r) {
+    const head = node("div", "rt-head");
+    const dep = r.realDep || r.plannedDep, arr = r.realArr || r.plannedArr;
+    const late = r.realArr && r.plannedArr ? Math.round((r.realArr - r.plannedArr) / 60) : 0;
+    const top = node("div", "rt-top");
+    top.append(node("b", "rt-span", `${hhmm(dep)} → ${hhmm(arr)}`), node("span", "rt-dur", `${r.minutes} min`));
+    head.append(top);
+    const sub = node("div", "rt-sub");
+    const rides = r.legs.filter((l) => l.line);
+    const seq = node("span", "rt-seq");
+    for (const l of rides) seq.append(badge(l.line, l.mode));
+    sub.append(seq, node("span", "", rides.length > 1 ? `${rides.length - 1} Umstieg${rides.length > 2 ? "e" : ""}` : "direkt"));
+    if (late) sub.append(node("span", "chip " + (late >= 5 ? "bad" : "mid"), `${signed(late)} min am Ziel`));
+    const ticket = (r.tickets || [])[0];
+    if (ticket) sub.append(node("span", "rt-fare", `${num(ticket.price.toFixed(2))} €${ticket.level ? ` · ${ticket.level}` : ""}`));
+    head.append(sub);
+    return head;
   }
 
   function renderRoutes(data) {
@@ -253,28 +395,25 @@
       return;
     }
     for (const r of data.routes) {
-      const card = node("div", "rcard");
-      const head = node("div", "rhead");
-      const late = r.realArr && r.plannedArr ? Math.round((r.realArr - r.plannedArr) / 60) : 0;
-      head.append(node("b", "", `${hhmm(r.plannedDep)} → ${hhmm(r.plannedArr)}`));
-      head.append(node("span", "rmin", `${r.minutes} min`));
-      const rides = r.legs.filter((l) => l.line).length;
-      head.append(node("span", "rmin", rides > 1 ? `${rides - 1} Umstieg${rides > 2 ? "e" : ""}` : "direkt"));
-      const tag = delayTag(late);
-      if (tag && late) {
-        tag.title = "Voraussichtliche Verspätung bei Ankunft";
-        head.append(tag);
-      }
-      card.append(head);
-      for (const leg of r.legs) {
-        if (!leg.line && leg.from.id === leg.to.id) continue; // Umstieg innerhalb der Station: kommt als Umstiegszeile
-        if (leg.transfer) card.append(transferRow(leg.transfer));
-        card.append(legRow(leg));
-      }
-      card.append(reliability(r.reliability, r.minutes));
+      const card = node("section", "rt");
+      card.append(routeHeader(r));
+      const line = node("div", "rt-line");
+      let prev = null;
+      r.legs.forEach((leg, i) => {
+        if (!leg.line) {
+          // Fußwege zwischen zwei Fahrten gehören zur Umstiegszeile; nur Wege vor der ersten und nach der letzten Fahrt stehen allein
+          const between = prev !== null && r.legs.slice(i + 1).some((l) => l.line);
+          if (!between) line.append(walkRow(leg));
+          return;
+        }
+        if (leg.transfer) line.append(transferRow(leg.transfer, prev, leg));
+        line.append(rideCard(leg));
+        prev = leg;
+      });
+      card.append(line, reliability(r.reliability));
       out.append(card);
     }
-    out.append(node("div", "foot", "Wahrscheinlichkeiten aus den Verspätungen, die diese Karte seit Ende Oktober gemessen hat (Zeitraum und Stichprobe je Linie siehe Tooltip)."));
+    out.append(node("div", "foot", "Wahrscheinlichkeiten aus den Verspätungen, die diese Karte seit Ende Oktober gemessen hat (Zeitraum und Stichprobe je Linie siehe Tooltip). Zeiten mit Funksymbol sind Echtzeitprognosen."));
   }
 
   async function search() {

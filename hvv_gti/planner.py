@@ -366,6 +366,7 @@ class Planner:
                 "schedulesBefore": count - 1 if arrive else 0,
                 "schedulesAfter": 0 if arrive else count - 1,
                 "realtime": "REALTIME",
+                "intermediateStops": True,
             },
         )
         schedules = response.get("realtimeSchedules") or response.get("schedules") or []
@@ -387,6 +388,12 @@ class Planner:
                     "realDep": real_dep.timestamp() if real_dep else None,
                     "realArr": real_arr.timestamp() if real_arr else None,
                     "minutes": schedule.get("time"),
+                    "footpathMin": schedule.get("footpathTime"),
+                    "tickets": [
+                        {"price": t.get("price"), "name": t.get("type"), "level": t.get("level")}
+                        for t in (schedule.get("tickets") or [])[:2]
+                        if t.get("price") is not None
+                    ],
                     "legs": legs,
                     "reliability": assessed,
                 }
@@ -417,12 +424,37 @@ def normalize_route(schedule: dict) -> list[dict]:
                     "depDelayMin": None if src.get("depDelay") is None else round(src["depDelay"] / 60),
                     "arrDelayMin": None if dst.get("arrDelay") is None else round(dst["arrDelay"] / 60),
                     "cancelled": bool(element.get("cancelled")),
+                    **ride_details(element, line, dep, arr),
                 }
             )
         elif dep is not None and arr is not None:
             legs.append({**base, "line": None, "walkMin": round((arr - dep) / 60)})
     annotate_transfers(legs)
     return legs
+
+
+def ride_details(element: dict, line: dict, dep: float | None, arr: float | None) -> dict:
+    """Zusatzangaben einer Fahrt fuer die Detailansicht: Zwischenhalte, Fahrzeugart, Betreiber, Hinweise."""
+    stops = []
+    for stop in element.get("intermediateStops") or []:
+        when = gti_epoch(stop.get("depTime")) or gti_epoch(stop.get("arrTime"))
+        delay = stop.get("depDelay", stop.get("arrDelay"))
+        stops.append({"name": stop.get("name"), "time": when, "delayMin": None if delay is None else round(delay / 60)})
+    kind = line.get("type") or {}
+    seen: list[str] = []
+    for note in element.get("announcements") or []:
+        text = (note.get("summary") or "").strip()
+        if text and text not in seen:
+            seen.append(text)
+    return {
+        "stops": stops,
+        "stopCount": len(stops) + 1,
+        "durationMin": None if dep is None or arr is None else round((arr - dep) / 60),
+        "vehicle": kind.get("longInfo") or kind.get("shortInfo") or "",
+        "carrier": line.get("carrierNameShort") or "",
+        "origin": line.get("origin") or "",
+        "notices": seen[:3],
+    }
 
 
 def annotate_transfers(legs: list[dict]) -> None:
@@ -437,6 +469,7 @@ def annotate_transfers(legs: list[dict]) -> None:
             wait = leg["dep"] - previous["arr"]
             leg["transfer"] = {
                 "station": previous["to"]["name"],
+                "toStation": leg["from"]["name"],
                 "waitMin": round(wait / 60),
                 "walkMin": round(walk_s / 60),
                 "arrPlatform": previous["to"]["platform"],

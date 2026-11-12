@@ -102,6 +102,19 @@ class PlannerHelperTests(unittest.TestCase):
         self.assertEqual((transfer["arrPlatform"], transfer["depPlatform"]), ("Gleis 1 (S-Bahn)", "Gleis 2 (S-Bahn)"))
         self.assertEqual(transfer["arr"], legs[0]["arr"])
 
+    def test_ride_details_carry_stops_vehicle_and_notices(self):
+        schedule = json.loads(json.dumps(SCHEDULE))
+        first = schedule["scheduleElements"][0]
+        first["intermediateStops"] = [{"name": "Hauptbahnhof", "depTime": {"date": "07.11.2026", "time": "13:40"}, "depDelay": 120}]
+        first["line"].update({"origin": "Wedel", "carrierNameShort": "S-Bahn", "type": {"simpleType": "TRAIN", "longInfo": "S-Bahn"}})
+        first["announcements"] = [{"summary": "Bauarbeiten"}, {"summary": "Bauarbeiten"}, {"summary": "Aufzug defekt"}]
+        leg = normalize_route(schedule)[0]
+        self.assertEqual(leg["stopCount"], 2)
+        self.assertEqual((leg["stops"][0]["name"], leg["stops"][0]["delayMin"]), ("Hauptbahnhof", 2))
+        self.assertEqual((leg["vehicle"], leg["carrier"], leg["origin"], leg["durationMin"]), ("S-Bahn", "S-Bahn", "Wedel", 32))
+        self.assertEqual(leg["notices"], ["Bauarbeiten", "Aufzug defekt"])
+        self.assertEqual(normalize_route(schedule)[2]["transfer"]["toStation"], "Altona")
+
     def test_pick_window_falls_back_to_all_times(self):
         when = datetime(2026, 11, 7, 13, 0, tzinfo=TZ)
         night = [(datetime(2026, 11, 3, 3, 0, tzinfo=TZ).timestamp() + i, 60.0) for i in range(30)]
