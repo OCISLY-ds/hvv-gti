@@ -79,10 +79,11 @@ def cmd_probe_vehicles(cfg: Config, args: argparse.Namespace) -> int:
     journeys = response.get("journeys", [])
     segments = [s for j in journeys for s in j.get("segments", [])]
     delays = [s["realtimeDelay"] for s in segments if s.get("realtimeDelay") is not None]
-    print(f"Latenz {client.last_latency:.2f}s, Antwort {client.last_response_bytes / 1024:.0f} KiB (entpackt)")
+    call = client.call_log[-1]
+    print(f"Latenz {call.latency_s:.2f}s, Antwort {call.response_bytes / 1024:.0f} KiB")
     print(f"Fahrten {len(journeys)}, Segmente {len(segments)}, mit Echtzeit {sum(1 for j in journeys if j.get('realtime'))}")
     if journeys:
-        print(f"Bytes pro Fahrt ~{client.last_response_bytes // len(journeys)}")
+        print(f"Bytes pro Fahrt ~{call.response_bytes // len(journeys)}")
     if delays:
         print(f"realtimeDelay (min): median {statistics.median(delays)}, max {max(delays)}, Segmente mit Wert {len(delays)}")
     for vehicle_type, n in Counter(j.get("vehicleType") for j in journeys).most_common():

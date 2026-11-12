@@ -169,6 +169,18 @@ class CollectNetworkTest(unittest.TestCase):
             self.assertEqual(network.collect_regional(client_for(gti), Config(regional=None), now=self.NOW), [])
             self.assertEqual(gti.requests, [])
 
+    def test_ferry_has_own_call_and_measurement(self):
+        answer = {"returnCode": "OK", "journeys": [journey("62", "Finkenwerder", "SCHIFF", segments=RUN)]}
+        with FakeGti(responses={"getVehicleMap": answer}) as gti:
+            lines = network.collect_ferry(client_for(gti), Config(), now=self.NOW)
+        self.assertEqual(gti.requests[0][1]["vehicleTypes"], ["SCHIFF"])
+        self.assertTrue(lines and all(l.startswith("hvv_ferry_stop,") for l in lines))
+        self.assertEqual({field(l, "mode") for l in lines}, {"F"})
+        self.assertEqual({field(l, "line") for l in lines}, {"62"})
+        with FakeGti() as gti:
+            self.assertEqual(network.collect_ferry(client_for(gti), Config(ferry=None), now=self.NOW), [])
+            self.assertEqual(gti.requests, [])
+
     def test_xbus_denial_is_tracked_separately_from_the_network(self):
         denied = {"vehicle_map"}
         with FakeGti(responses={"getVehicleMap": {"returnCode": "OK", "journeys": []}}) as gti:

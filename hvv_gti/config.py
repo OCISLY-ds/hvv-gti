@@ -166,6 +166,18 @@ REGIONAL = Network(
 )
 
 
+# Alle Faehren (getVehicleMap-Typ SCHIFF, live geprueft: Linien 61, 62, 64, 68, 72, 73 im Hafen, 5160 und 5170 an der Elbe
+# bei Bleckede/Darchau). Eigener Aufruf und eigene Messung. Faehren fahren selten, daher der groessere Horizont. Nur die
+# Hafenlinien haben Echtzeit, die Elbfaehren nicht (dann fehlt `delay_s`).
+FERRY = Network(
+    name="Faehren HVV",
+    vehicle_types=("SCHIFF",),
+    bbox=(8.45, 53.10, 10.95, 54.05),
+    horizon_s=900,
+    measurement="hvv_ferry_stop",
+)
+
+
 @dataclass(frozen=True)
 class Config:
     gti_user: str = ""
@@ -178,6 +190,7 @@ class Config:
     network: Network | None = NETWORK
     xbus: Network | None = XBUS
     regional: Network | None = REGIONAL
+    ferry: Network | None = FERRY
     poll_interval: float = 60.0
     # Stoerungsmeldungen aendern sich selten und die Antwort ist gross (~75 KB); 0 schaltet sie ab.
     announcement_interval: float = 300.0

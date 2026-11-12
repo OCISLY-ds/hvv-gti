@@ -9,7 +9,7 @@ from .influx import line_protocol
 log = logging.getLogger("hvv_gti.network")
 
 MEASUREMENT = "hvv_network_stop"
-MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X"}
+MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X", "SCHIFF": "F"}
 
 
 def parse_journey(journey: dict, now_ts: int, horizon_s: int, measurement: str = MEASUREMENT) -> list[str]:
@@ -65,6 +65,11 @@ def collect_xbus(client: GtiClient, cfg: Config, now: datetime | None = None, de
 def collect_regional(client: GtiClient, cfg: Config, now: datetime | None = None, denied: set[str] | None = None) -> list[str]:
     """Wie `collect_network` fuer alle RE- und RB-Linien, Messung `hvv_regional_stop` (eigener Aufruf wegen des grossen Gebiets)."""
     return _collect(client, cfg.regional, now, denied, "vehicle_map_regional")
+
+
+def collect_ferry(client: GtiClient, cfg: Config, now: datetime | None = None, denied: set[str] | None = None) -> list[str]:
+    """Wie `collect_network` fuer alle Faehren (Typ SCHIFF), Messung `hvv_ferry_stop`."""
+    return _collect(client, cfg.ferry, now, denied, "vehicle_map_ferry")
 
 
 def _collect(client: GtiClient, network: Network | None, now: datetime | None, denied: set[str] | None, key: str) -> list[str]:

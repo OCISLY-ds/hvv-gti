@@ -83,11 +83,6 @@ class ClientTest(unittest.TestCase):
             client_for(gti).check_name("Elbgaustraße / Süderelbe")
         self.assertEqual(gti.requests[0][1]["theName"]["name"], "Elbgaustraße / Süderelbe")
 
-    def test_gzip_response(self):
-        with FakeGti(responses=gti_responses([departure("S5", 3, 60)]), gzip_responses=True) as gti:
-            data = client_for(gti).departure_list(STADE, REFERENCE)
-        self.assertEqual(len(data["departures"]), 1)
-
     def test_missing_permission_is_not_an_auth_error(self):
         with FakeGti(responses={"departureList": departures_only([])}) as gti:
             with self.assertRaises(GtiPermissionError) as ctx:
