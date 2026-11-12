@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16202e">
+<title>HVV Live-Karte</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+<aside id="panel" class="collapsed">
+  <header id="phead">
+    <div><h1>HVV Live-Karte</h1><div id="status">lade ...</div></div>
+    <button id="ptoggle" type="button" aria-expanded="false" aria-controls="pbody" title="Linien ein-/ausblenden"><span class="chev"></span></button>
+  </header>
+  <div id="pbody">
+    <div id="cats"></div>
+    <button id="open-route" type="button" class="btn">Routenplaner</button>
+    <label id="btoggle"><input type="checkbox" id="blocks"> Signalblöcke anzeigen</label>
+    <div id="legend"></div>
+  </div>
+</aside>
+<aside id="route" hidden>
+  <header><b>Routenplaner</b><button id="pl-close" type="button" aria-label="Schließen">×</button></header>
+  <div class="form">
+    <input id="pl-from" list="pl-from-list" placeholder="Start (Haltestelle)" autocomplete="off"><datalist id="pl-from-list"></datalist>
+    <button id="pl-swap" type="button" title="Start und Ziel tauschen" aria-label="Tauschen">⇅</button>
+    <input id="pl-to" list="pl-to-list" placeholder="Ziel (Haltestelle)" autocomplete="off"><datalist id="pl-to-list"></datalist>
+    <div class="when"><select id="pl-mode"><option value="0">Abfahrt</option><option value="1">Ankunft</option></select><input id="pl-when" type="datetime-local"></div>
+    <button id="pl-go" type="button" class="btn go">Verbindungen suchen</button>
+  </div>
+  <div id="pl-result"></div>
+</aside>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script src="motion.js"></script>
+<script src="planner.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

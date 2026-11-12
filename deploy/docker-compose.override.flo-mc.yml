@@ -1,0 +1,7 @@
+# Karte auf Port 8100 statt 8090 (dort leitet der Reverse Proxy bluemap.florianvonbargen.de hin).
+# Auf dem Zielhost als docker-compose.override.yml neben die docker-compose.yml kopieren; die Kopie ist nicht versioniert:
+#   cp deploy/docker-compose.override.flo-mc.yml docker-compose.override.yml
+# Beide Dienste laufen mit network_mode: host, deshalb gilt kein `ports:`, der Port steht im Befehl.
+services:
+  hvv-map:
+    command: ["serve-map", "--port", "8100"]

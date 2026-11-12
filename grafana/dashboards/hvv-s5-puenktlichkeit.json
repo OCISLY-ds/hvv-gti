@@ -1,0 +1,1605 @@
+{
+  "uid": "hvv-s5-puenktlichkeit",
+  "title": "HVV Pünktlichkeit (S5, S7, X30, RE5, 234)",
+  "description": "Pünktlichkeit, Verspätungen und Ausfälle der S-Bahn-Linien S5 (Stade – Hamburg) und S7 (Bergedorf – Hamburg, derzeit mit Ersatzbus S7-SEV), der XpressBus-Linie X30 (Harburg – Bergedorf), des RE5 (Stade – Hamburg Hbf/Cuxhaven) und des Busses 234 (Bergedorf – Lohbrügger Weg/Leuschnerstraße) aus den Geofox-GTI-Echtzeitdaten.",
+  "tags": [
+    "hvv",
+    "s5",
+    "s7",
+    "x30",
+    "oepnv"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "timezone": "Europe/Berlin",
+  "refresh": "5m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "label": "Datenquelle",
+        "type": "datasource",
+        "query": "influxdb",
+        "refresh": 1,
+        "current": {
+          "selected": true,
+          "text": "HVV InfluxDB",
+          "value": "hvv-influx"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "bucket",
+        "label": "Bucket",
+        "type": "textbox",
+        "query": "hvv",
+        "current": {
+          "text": "hvv",
+          "value": "hvv"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "hvv",
+            "value": "hvv"
+          }
+        ],
+        "hide": 2
+      },
+      {
+        "name": "route",
+        "label": "Linie",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"route\", predicate: (r) => r._measurement == \"hvv_stop_event\", start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"route\", predicate: (r) => r._measurement == \"hvv_stop_event\", start: -90d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1,
+        "description": "Linie wie im HVV (S5, S7, X30, RE5, 234)."
+      },
+      {
+        "name": "station",
+        "label": "Station",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"station\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"station\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      },
+      {
+        "name": "kind",
+        "label": "Art",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"kind\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"kind\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      },
+      {
+        "name": "direction",
+        "label": "Richtung",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"direction\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"direction\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1,
+        "description": "Fahrtrichtung, z. B. Neugraben oder Stade; hängt von der gewählten Linie ab."
+      },
+      {
+        "name": "origin",
+        "label": "Von",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${ds}"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"origin\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${bucket}\", tag: \"origin\", predicate: (r) => r._measurement == \"hvv_stop_event\" and contains(value: r.route, set: ${route:json}), start: -90d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      },
+      {
+        "name": "threshold_min",
+        "label": "Schwelle",
+        "type": "custom",
+        "query": "1,2,3,5,6,10",
+        "current": {
+          "text": "3",
+          "value": "3"
+        },
+        "options": [
+          {
+            "selected": false,
+            "text": "1",
+            "value": "1"
+          },
+          {
+            "selected": false,
+            "text": "2",
+            "value": "2"
+          },
+          {
+            "selected": true,
+            "text": "3",
+            "value": "3"
+          },
+          {
+            "selected": false,
+            "text": "5",
+            "value": "5"
+          },
+          {
+            "selected": false,
+            "text": "6",
+            "value": "6"
+          },
+          {
+            "selected": false,
+            "text": "10",
+            "value": "10"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "HVV",
+      "type": "link",
+      "url": "https://www.hvv.de",
+      "targetBlank": true,
+      "icon": "external link"
+    },
+    {
+      "title": "Zuglauf Stade – Hamburg",
+      "type": "link",
+      "url": "/d/hvv-zuglauf-stade-hamburg",
+      "icon": "dashboard"
+    },
+    {
+      "title": "Netz S- und U-Bahn",
+      "type": "link",
+      "url": "/d/hvv-netz-s-u-bahn",
+      "icon": "dashboard"
+    },
+    {
+      "title": "API-Nutzung",
+      "type": "link",
+      "url": "/d/hvv-api-nutzung",
+      "icon": "dashboard"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Pünktlichkeit",
+      "description": "Anteil der nicht ausgefallenen Fahrten mit Echtzeitwert, deren Verspätung unter der gewählten Schwelle liegt.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({_time: r._time, _value: if r.delay_s < ${threshold_min} * 60 then 100.0 else 0.0}))\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Ø Verspätung",
+      "description": "Mittlere Verspätung der nicht ausgefallenen Fahrten mit Echtzeitwert.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: r.delay_s) / 60.0}))\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Ausfallquote",
+      "description": "Anteil der von der Echtzeitauskunft als ausfallend gemeldeten Fahrten.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\nevents\n  |> map(fn: (r) => ({_time: r._time, _value: if r.cancelled == 1 then 100.0 else 0.0}))\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Erfasste Fahrten",
+      "description": "Anzahl der Halte (Abfahrten bzw. Ankünfte) im gewählten Zeitraum und Filter.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\nevents\n  |> map(fn: (r) => ({_value: r.cancelled}))\n  |> count()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Echtzeit-Anteil",
+      "description": "Anteil der nicht ausgefallenen Fahrten, für die die Auskunft einen Echtzeitwert gemeldet hat. Ohne Echtzeitwert (häufig bei Bussen) ist die Verspätung unbekannt, die Fahrt zählt dann weder pünktlich noch verspätet.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\nserved\n  |> map(fn: (r) => ({_time: r._time, _value: if exists r.delay_s then 100.0 else 0.0}))\n  |> group()\n  |> mean()\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Pünktlichkeit pro Tag",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({_time: r._time, _start: r._start, _stop: r._stop, _value: if r.delay_s < ${threshold_min} * 60 then 100.0 else 0.0}))\n  |> aggregateWindow(every: 1d, fn: mean, timeSrc: \"_start\", createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"Pünktlich\"})\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "barAlignment": 0,
+            "lineWidth": 1,
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Verspätung im Verlauf",
+      "description": "Mittelwert und 90. Perzentil der Verspätung (ohne Ausfälle, nur Fahrten mit Echtzeitwert) je Zeitfenster.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({_time: r._time, _start: r._start, _stop: r._stop, _value: float(v: r.delay_s) / 60.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, timeSrc: \"_start\", createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"Ø Verspätung\"})\n"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({_time: r._time, _start: r._start, _stop: r._stop, _value: float(v: r.delay_s) / 60.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: (tables=<-, column) => tables |> quantile(q: 0.9, column: column), timeSrc: \"_start\", createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"90. Perzentil\"})\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: min",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "trend",
+      "title": "Pünktlichkeit nach Uhrzeit",
+      "description": "Pünktlichkeitsquote je Stunde der planmäßigen Abfahrt/Ankunft (Europe/Berlin). X-Achse: Stunde (0–23).",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({hour: date.hour(t: r._time), ok: if r.delay_s < ${threshold_min} * 60 then 100.0 else 0.0}))\n  |> group(columns: [\"hour\"])\n  |> mean(column: \"ok\")\n  |> group()\n  |> sort(columns: [\"hour\"])\n  |> map(fn: (r) => ({Stunde: r.hour, \"Pünktlich\": r.ok}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "xField": "Stunde",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "trend",
+      "title": "Verteilung der Verspätungen",
+      "description": "Anzahl der Fahrten je Verspätung in vollen Minuten (ohne Ausfälle, nur mit Echtzeitwert). X-Achse: 15 = 15 Minuten und mehr.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\ntimed\n  |> map(fn: (r) => ({bucket: if r.delay_s < 0 then 0 else if r.delay_s >= 900 then 15 else r.delay_s / 60, n: 1}))\n  |> group(columns: [\"bucket\"])\n  |> count(column: \"n\")\n  |> group()\n  |> sort(columns: [\"bucket\"])\n  |> map(fn: (r) => ({\"Verspätung (min)\": r.bucket, Fahrten: r.n}))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "xField": "Verspätung (min)",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Kennzahlen je Linie, Station, Art und Richtung",
+      "description": "Pünktlich und Ø Verspätung beziehen sich auf die Fahrten mit Echtzeitwert, Echtzeit zeigt deren Anteil an den nicht ausgefallenen Fahrten.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\nevents\n  |> group(columns: [\"line\", \"station\", \"kind\", \"direction\", \"origin\"])\n  |> reduce(\n      identity: {n: 0, canc: 0, served: 0, timed: 0, ok: 0, delay_sum: 0.0},\n      fn: (r, accumulator) => ({\n        n: accumulator.n + 1,\n        canc: accumulator.canc + r.cancelled,\n        served: accumulator.served + (1 - r.cancelled),\n        timed: accumulator.timed + (if r.cancelled == 0 then (if exists r.delay_s then 1 else 0) else 0),\n        ok: accumulator.ok + (if r.cancelled == 0 then (if exists r.delay_s then (if r.delay_s < ${threshold_min} * 60 then 1 else 0) else 0) else 0),\n        delay_sum: accumulator.delay_sum + (if r.cancelled == 0 then (if exists r.delay_s then float(v: r.delay_s) else 0.0) else 0.0)\n      })\n  )\n  |> group()\n  |> map(fn: (r) => ({\n      Logo: \"/public/img/hvv/\" + r.line + \".svg\", Linie: r.line,\n      Station: r.station,\n      Art: if r.kind == \"departure\" then \"Abfahrt\" else \"Ankunft\",\n      Richtung: r.direction,\n      Von: r.origin,\n      Fahrten: r.n,\n      \"Pünktlich\": if r.timed > 0 then float(v: r.ok) / float(v: r.timed) * 100.0 else 0.0,\n      \"Ø Verspätung\": if r.timed > 0 then r.delay_sum / float(v: r.timed) / 60.0 else 0.0,\n      \"Ausfälle\": float(v: r.canc) / float(v: r.n) * 100.0,\n      Echtzeit: if r.served > 0 then float(v: r.timed) / float(v: r.served) * 100.0 else 0.0\n  }))\n  |> sort(columns: [\"Linie\", \"Station\", \"Art\", \"Richtung\"])\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pünktlich"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ø Verspätung"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: min"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ausfälle"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Echtzeit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Logo"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "alt": "Linie",
+                  "title": "Linie"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 64
+              },
+              {
+                "id": "displayName",
+                "value": " "
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Logo": 0,
+              "Linie": 1
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Letzte Verspätungen und Ausfälle",
+      "description": "Die jüngsten Fahrten mit Verspätung ab Schwelle oder Ausfall. Die Zug-ID (GTI-serviceId) ist je Fahrt eindeutig und an jeder Station gleich: Filter auf eine ID zeigt, wie die Verspätung entlang der Strecke zu- oder abnimmt. Plan ist die planmäßige Abfahrt.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"timezone\"\nimport \"date\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\" or r._field == \"service_id\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nserved = events |> filter(fn: (r) => r.cancelled == 0)\ntimed = served |> filter(fn: (r) => exists r.delay_s)\n\nevents\n  |> filter(fn: (r) => r.cancelled == 1 or (if exists r.delay_s then r.delay_s >= ${threshold_min} * 60 else false))\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> map(fn: (r) => ({\n      Plan: r._time,\n      \"Zug-ID\": if exists r.service_id then string(v: r.service_id) else \"\",\n      Logo: \"/public/img/hvv/\" + r.line + \".svg\", Linie: r.line,\n      Station: r.station,\n      Art: if r.kind == \"departure\" then \"Abfahrt\" else \"Ankunft\",\n      Richtung: r.direction,\n      Ziel: r.destination,\n      \"Verspätung\": if exists r.delay_s then float(v: r.delay_s) / 60.0 else 0.0,\n      Ausfall: if r.cancelled == 1 then \"Ausfall\" else \"\"\n  }))\n"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verspätung"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: min"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Logo"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "alt": "Linie",
+                  "title": "Linie"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 64
+              },
+              {
+                "id": "displayName",
+                "value": " "
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Logo": 0,
+              "Linie": 1
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Gründe",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Verspätete Fahrten mit Hinweis",
+      "description": "Anteil der verspäteten (ab Schwelle) oder ausgefallenen Fahrten, zu denen die GTI an der Abfahrt einen Hinweis liefert (z. B. Fahrzeug im Stau). Die GTI nennt für die meisten Verspätungen keinen Grund, niedrige Werte sind also normal.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "–"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "events = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\" or r._field == \"reason_text\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nevents\n  |> filter(fn: (r) => r.cancelled == 1 or (if exists r.delay_s then r.delay_s >= ${threshold_min} * 60 else false))\n  |> map(fn: (r) => ({_time: r._time, _value: if exists r.reason_text then (if r.reason_text != \"\" then 100.0 else 0.0) else 0.0}))\n  |> mean()\n"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Aktive ungeplante Störungsmeldungen",
+      "description": "Zurzeit gültige, nicht geplante Meldungen der GTI für die gewählten Linien (z. B. Polizeieinsatz, Personalausfall). Unabhängig vom Zeitraum: gezählt werden Meldungen, die in den letzten 11 Minuten abgefragt wurden.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 32,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"array\"\n\nfound = from(bucket: \"${bucket}\")\n  |> range(start: -11m)\n  |> filter(fn: (r) => r._measurement == \"hvv_announcement\" and r._field == \"version\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${route:json}))\n  |> filter(fn: (r) => r.planned == \"false\")\n  |> group(columns: [\"announcement_id\"])\n  |> last()\n  |> group()\n  |> count()\n  |> keep(columns: [\"_value\"])\n\nzero = array.from(rows: [{_value: 0}])\n\nunion(tables: [found, zero])\n  |> group()\n  |> sum()\n"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Aktive geplante Meldungen",
+      "description": "Zurzeit gültige geplante Meldungen für die gewählten Linien (Bauarbeiten, Sperrungen, Aufzüge usw.). Unabhängig vom Zeitraum: gezählt werden Meldungen, die in den letzten 11 Minuten abgefragt wurden.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 32,
+        "w": 8,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"array\"\n\nfound = from(bucket: \"${bucket}\")\n  |> range(start: -11m)\n  |> filter(fn: (r) => r._measurement == \"hvv_announcement\" and r._field == \"version\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${route:json}))\n  |> filter(fn: (r) => r.planned == \"true\")\n  |> group(columns: [\"announcement_id\"])\n  |> last()\n  |> group()\n  |> count()\n  |> keep(columns: [\"_value\"])\n\nzero = array.from(rows: [{_value: 0}])\n\nunion(tables: [found, zero])\n  |> group()\n  |> sum()\n"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Hinweise an der Abfahrt nach Typ",
+      "description": "Anzahl der Fahrten im Zeitraum, zu denen die GTI einen Hinweis (Typ aus `attributes` der Abfahrtstafel) geliefert hat. Mehrere Typen an einer Fahrt stehen zusammen in einer Zeile.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Fahrten"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"strings\"\n\nlabel = (v) => {\n  s1 = strings.replaceAll(v: v, t: \"TRAFFIC_JAM\", u: \"Fahrzeug im Stau\")\n  s2 = strings.replaceAll(v: s1, t: \"TECHNICAL_PROBLEM\", u: \"Technisches Problem\")\n  s3 = strings.replaceAll(v: s2, t: \"DISPOSITIVE_ACTION\", u: \"Betriebliche Maßnahme\")\n  s4 = strings.replaceAll(v: s3, t: \"MISSING_UPDATE\", u: \"Keine aktuelle Echtzeitmeldung\")\n  s5 = strings.replaceAll(v: s4, t: \"REALTIME\", u: \"Echtzeithinweis\")\n  return strings.replaceAll(v: s5, t: \",\", u: \" + \")\n}\n\nfrom(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\" and r._field == \"reason_types\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> group()\n  |> map(fn: (r) => ({Grund: label(v: r._value), Fahrten: 1}))\n  |> group(columns: [\"Grund\"])\n  |> sum(column: \"Fahrten\")\n  |> group()\n  |> sort(columns: [\"Fahrten\"], desc: true)\n"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Störungsmeldungen nach Grund",
+      "description": "Anzahl verschiedener Störungsmeldungen im Zeitraum für die gewählten Linien, nach GTI-Grund und geplant oder ungeplant. Eine Meldung, die mehrere Linien betrifft, zählt einmal.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Meldungen"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"strings\"\n\nlabel = (v) => {\n  s1 = strings.replaceAll(v: v, t: \"ROADWORKS\", u: \"Bauarbeiten\")\n  s2 = strings.replaceAll(v: s1, t: \"ROAD_CLOSED\", u: \"Straßensperrung\")\n  s3 = strings.replaceAll(v: s2, t: \"UNDEFINED_PROBLEM\", u: \"Sonstige Störung\")\n  s4 = strings.replaceAll(v: s3, t: \"SPECIAL_EVENT\", u: \"Veranstaltung\")\n  s5 = strings.replaceAll(v: s4, t: \"DEMONSTRATION\", u: \"Demonstration\")\n  s6 = strings.replaceAll(v: s5, t: \"POLICE_REQUEST\", u: \"Polizeieinsatz\")\n  s7 = strings.replaceAll(v: s6, t: \"STAFF_ABSENCE\", u: \"Personalausfall\")\n  s8 = strings.replaceAll(v: s7, t: \"ACCIDENT\", u: \"Unfall\")\n  s9 = strings.replaceAll(v: s8, t: \"SERVICE_FAILURE\", u: \"Betriebsstörung\")\n  return s9\n}\n\nfrom(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_announcement\" and r._field == \"version\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${route:json}))\n  |> group(columns: [\"announcement_id\", \"reason\", \"planned\"])\n  |> first()\n  |> group()\n  |> map(fn: (r) => ({Grund: label(v: r.reason) + (if r.planned == \"true\" then \" (geplant)\" else \" (ungeplant)\"), Meldungen: 1}))\n  |> group(columns: [\"Grund\"])\n  |> sum(column: \"Meldungen\")\n  |> group()\n  |> sort(columns: [\"Meldungen\"], desc: true)\n"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Fahrten mit Hinweis",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Fahrten, zu denen die GTI an der Abfahrt einen Hinweis geliefert hat (jüngste zuerst, höchstens 50). Der Hinweis ist der zuletzt gemeldete Text. Plan ist die planmäßige Abfahrt; mit der Zug-ID lässt sich die Fahrt an anderen Stationen wiederfinden.",
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verspätung"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: min"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Logo"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "alt": "Linie",
+                  "title": "Linie"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 64
+              },
+              {
+                "id": "displayName",
+                "value": " "
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"strings\"\nimport \"timezone\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nlabel = (v) => {\n  s1 = strings.replaceAll(v: v, t: \"TRAFFIC_JAM\", u: \"Fahrzeug im Stau\")\n  s2 = strings.replaceAll(v: s1, t: \"TECHNICAL_PROBLEM\", u: \"Technisches Problem\")\n  s3 = strings.replaceAll(v: s2, t: \"DISPOSITIVE_ACTION\", u: \"Betriebliche Maßnahme\")\n  s4 = strings.replaceAll(v: s3, t: \"MISSING_UPDATE\", u: \"Keine aktuelle Echtzeitmeldung\")\n  s5 = strings.replaceAll(v: s4, t: \"REALTIME\", u: \"Echtzeithinweis\")\n  return strings.replaceAll(v: s5, t: \",\", u: \" + \")\n}\n\nevents = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_stop_event\")\n  |> filter(fn: (r) => contains(value: r.route, set: ${route:json}) and contains(value: r.station, set: ${station:json}) and contains(value: r.kind, set: ${kind:json}) and contains(value: r.direction, set: ${direction:json}) and contains(value: r.origin, set: ${origin:json}))\n  |> filter(fn: (r) => r._field == \"delay_s\" or r._field == \"cancelled\" or r._field == \"service_id\" or r._field == \"reason_types\" or r._field == \"reason_text\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n\nevents\n  |> filter(fn: (r) => if exists r.reason_text then r.reason_text != \"\" else false)\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> map(fn: (r) => ({\n      Plan: r._time,\n      \"Zug-ID\": if exists r.service_id then string(v: r.service_id) else \"\",\n      Logo: \"/public/img/hvv/\" + r.line + \".svg\", Linie: r.line,\n      Station: r.station,\n      Richtung: r.direction,\n      \"Verspätung\": if exists r.delay_s then float(v: r.delay_s) / 60.0 else 0.0,\n      Ausfall: if exists r.cancelled then (if r.cancelled == 1 then \"Ausfall\" else \"\") else \"\",\n      Typ: if exists r.reason_types then label(v: r.reason_types) else \"\",\n      Hinweis: r.reason_text\n  }))\n"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Logo": 0,
+              "Linie": 1
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Störungsmeldungen der Linien",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${ds}"
+      },
+      "description": "Meldungen der GTI für die gewählten Linien (zuletzt gesehene zuerst, höchstens 50). Eine Meldung gilt für die Linie, nicht für einen einzelnen Zug. Erstmals und zuletzt gesehen beziehen sich auf die Abfragen des Collectors innerhalb des Zeitraums, nicht auf den Beginn oder das Ende der Störung. Aktiv heißt: in den letzten 11 Minuten abgefragt.",
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "aktiv": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "beendet": {
+                        "color": "text",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Logo"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "alt": "Linie",
+                  "title": "Linie"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 64
+              },
+              {
+                "id": "displayName",
+                "value": " "
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${ds}"
+          },
+          "query": "import \"date\"\nimport \"strings\"\nimport \"timezone\"\n\noption location = timezone.location(name: \"Europe/Berlin\")\n\nlabel = (v) => {\n  s1 = strings.replaceAll(v: v, t: \"ROADWORKS\", u: \"Bauarbeiten\")\n  s2 = strings.replaceAll(v: s1, t: \"ROAD_CLOSED\", u: \"Straßensperrung\")\n  s3 = strings.replaceAll(v: s2, t: \"UNDEFINED_PROBLEM\", u: \"Sonstige Störung\")\n  s4 = strings.replaceAll(v: s3, t: \"SPECIAL_EVENT\", u: \"Veranstaltung\")\n  s5 = strings.replaceAll(v: s4, t: \"DEMONSTRATION\", u: \"Demonstration\")\n  s6 = strings.replaceAll(v: s5, t: \"POLICE_REQUEST\", u: \"Polizeieinsatz\")\n  s7 = strings.replaceAll(v: s6, t: \"STAFF_ABSENCE\", u: \"Personalausfall\")\n  s8 = strings.replaceAll(v: s7, t: \"ACCIDENT\", u: \"Unfall\")\n  s9 = strings.replaceAll(v: s8, t: \"SERVICE_FAILURE\", u: \"Betriebsstörung\")\n  return s9\n}\n\nfrom(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvv_announcement\" and r._field == \"summary\")\n  |> filter(fn: (r) => contains(value: r.line, set: ${route:json}))\n  |> group(columns: [\"announcement_id\", \"line\", \"reason\", \"planned\"])\n  |> reduce(\n      identity: {first: time(v: 0), last: time(v: 0), summary: \"\"},\n      fn: (r, accumulator) => ({\n        first: if accumulator.first == time(v: 0) or r._time < accumulator.first then r._time else accumulator.first,\n        last: if r._time > accumulator.last then r._time else accumulator.last,\n        summary: if r._time >= accumulator.last then r._value else accumulator.summary\n      })\n  )\n  |> group()\n  |> sort(columns: [\"last\"], desc: true)\n  |> limit(n: 50)\n  |> map(fn: (r) => ({\n      \"Zuletzt gesehen\": r.last,\n      \"Erstmals gesehen\": r.first,\n      Status: if r.last >= date.sub(d: 11m, from: now()) then \"aktiv\" else \"beendet\",\n      Logo: \"/public/img/hvv/\" + r.line + \".svg\", Linie: r.line,\n      Grund: label(v: r.reason),\n      Art: if r.planned == \"true\" then \"geplant\" else \"ungeplant\",\n      Meldung: r.summary\n  }))\n"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Logo": 0,
+              "Linie": 1
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Hinweise",
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Datenquelle:** Echtzeitdaten der Geofox-Schnittstelle (GTI) des [HVV](https://www.hvv.de). Erfasst wird minütlich je Haltestelle und Verkehrsmittel die Abfahrtstafel; die Verspätung ist der **zuletzt gemeldete** Wert vor der Abfahrt (gleiche Fahrt = gleicher Zeitstempel, spätere Abfragen überschreiben frühere). Gemessen wird an den im Code festgelegten Messpunkten (`ROUTES` in `hvv_gti/config.py`); Ankunftstafeln sind für diesen GTI-Zugang nicht freigeschaltet, deshalb gibt es am Ziel einer Strecke keine eigene Messung.\n\n**Pünktlich** heißt: Verspätung kleiner als die Schwelle (Variable *Schwelle*, Standard 3 Minuten). Ausfälle zählen nicht in die Pünktlichkeit, sondern in die Ausfallquote. Pünktlichkeit und Ø Verspätung gelten nur für Fahrten **mit Echtzeitwert**; Fahrten ohne Echtzeitwert (häufig bei Bussen) stecken in *Erfasste Fahrten*, ihr Anteil steht in *Echtzeit-Anteil*. Lücken entstehen, wenn der Collector nicht lief oder die API nicht antwortete.\n\n**Linie und Richtung:** *Linie* ist die Linie (S5, S7, X30, RE5, 234), *Richtung* die Fahrtrichtung am Messpunkt (z. B. S5 Richtung Neugraben oder Stade, X30 Richtung Harburg oder Bergedorf). Gemessen wird bei der S5 in Stade, Neugraben und am Hauptbahnhof, beim RE5 in Stade, bei S7, X30 und 234 in Bergedorf, bei der X30 zusätzlich am Harburg Rathaus. Am 19.10.2026 fährt die S5 geteilt (Zugwechsel in Neugraben) und die S7 nur zwischen Bergedorf und Aumühle; Richtung Hamburg fährt dort der Ersatzbus *S7-SEV*, der unter der Linie S7 läuft (Spalte *Linie* in den Tabellen trennt Zug und Bus). Fahren S5 oder S7 wieder durchgehend, erscheinen neue Richtungen automatisch mit dem Ziel aus der GTI.\n\n**Zug-ID:** Die ID in *Letzte Verspätungen* ist je Fahrt eindeutig und an jeder Station dieselbe. Den Verlauf der Verspätung eines Zuges entlang der Strecke zeigt das Dashboard [Zuglauf Stade – Hamburg](/d/hvv-zuglauf-stade-hamburg).\n\n**Gründe:** Die GTI nennt keinen Verspätungsgrund je Fahrt. Der Abschnitt *Gründe* zeigt zwei grobe Quellen: **Hinweise an der Abfahrt** (z. B. „Fahrzeug im Stau“, nur bei wenigen Fahrten) und **Störungsmeldungen** der Linie (Bauarbeiten, Polizeieinsatz, Personalausfall usw., geplant oder ungeplant). Eine Meldung gilt für die Linie und nicht für einen einzelnen Zug, der Zusammenhang mit einer Verspätung ist nur zeitlich. Beides wird erst seit dem Start des aktualisierten Collectors erfasst; davor bleiben die Panels leer. *Erstmals gesehen* ist der Beginn der Erfassung, nicht der der Störung."
+      }
+    }
+  ]
+}

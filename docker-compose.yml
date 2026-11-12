@@ -1,0 +1,41 @@
+services:
+  hvv-collector:
+    build:
+      context: .
+      network: host
+    image: hvv-gti:latest
+    container_name: hvv-collector
+    restart: unless-stopped
+    # Host-Netzwerk, damit INFLUX_URL=http://localhost:8086 wie ausserhalb von Docker funktioniert.
+    network_mode: host
+    env_file: .env
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Live-Karte (Port 8090): interpolierte S-/U-Bahnen, Basiskarte aus map/data/hamburg.pmtiles (map/tiles/build.sh),
+  # Linien-Logos in data/icons (werden auch in Grafana unter /public/img/hvv eingebunden).
+  hvv-map:
+    build:
+      context: .
+      network: host
+    image: hvv-gti:latest
+    container_name: hvv-map
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    env_file: .env
+    # X-Busse sind auf der Karte standardmaessig dabei (im Browser abschaltbar), "--no-xbus" laesst sie ganz weg
+    command: ["serve-map", "--port", "8090"]
+    volumes:
+      - ./data:/app/data
+      - ./map/data:/app/map/data
+    mem_limit: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
