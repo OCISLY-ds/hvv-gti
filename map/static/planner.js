@@ -219,12 +219,10 @@
     return root.hvvColorOf ? root.hvvColorOf(leg.line) : "#5b6785";
   }
 
-  // Symbol auf der Linie: Bus = roter Rhombus, S/U = Kreis, sonst abgerundetes Schild
+  // Symbol auf der Linie: das Logo der Linie selbst
   function railIcon(leg) {
-    const mode = leg.mode;
-    const box = node("span", "rt-mode m-" + mode);
-    box.style.setProperty("--m", mode === "S" ? "#3a9b3a" : mode === "U" ? "#0b5cab" : lineColor(leg));
-    box.append(node("span", "", mode === "B" ? "BUS" : mode === "X" ? "X" : mode === "R" ? "R" : mode === "F" ? "F" : mode));
+    const box = node("span", "rt-logo");
+    box.append(badge(leg.line, leg.mode));
     return box;
   }
 
@@ -236,9 +234,7 @@
     if (known && !cancelled) big.append(icon("live", "rt-live"));
     cell.append(big);
     if (known && delayMin !== 0 && !cancelled) {
-      const small = node("span", "rt-plan");
-      small.append(`Plan ${hhmm(ts)} `, node("b", delayClass(delayMin), `${signed(delayMin)} min`));
-      cell.append(small);
+      cell.append(node("span", "rt-plan", `Plan ${hhmm(ts)}`), node("b", "rt-plan " + delayClass(delayMin), `${signed(delayMin)} min`));
     }
     return cell;
   }
@@ -265,7 +261,7 @@
     rail.append(railIcon(leg));
     const body = node("div", "body");
     const pill = node("div", "rt-pill" + (leg.cancelled ? " gone" : ""));
-    pill.append(badge(leg.line, leg.mode), node("span", "", `Richtung ${leg.direction || "–"}`));
+    pill.append(node("span", "", `Richtung ${leg.direction || "–"}`));
     body.append(pill);
     if (leg.cancelled) body.append(node("div", "rt-warn", "Diese Fahrt fällt aus."));
 
@@ -291,7 +287,7 @@
 
     if (leg.stats && (leg.stats.alight || leg.stats.cancelRate !== null && leg.stats.cancelRate !== undefined)) {
       const st = leg.stats, bits = [];
-      if (st.alight) bits.push(`${leg.line} pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}`);
+      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}`);
       if (st.cancelRate !== null && st.cancelRate !== undefined) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
       const line = node("div", "rt-stat", bits.join(" · "));
       if (st.alight) line.title = `Zeitraum: ${st.alight.window}, Bezug: ${st.alight.scope}. Verspätung am Ausstiegshalt, gemessen von dieser Karte.`;
@@ -330,10 +326,6 @@
     text.append(icon("swap", "rt-ico"), node("span", "", `Steige um (${parts.join(", ")})`));
     body.append(text);
 
-    const platforms = [tr.toStation && tr.toStation !== tr.station ? `${tr.station} → ${tr.toStation}` : tr.station];
-    if (tr.arrPlatform && tr.depPlatform) platforms.push(tr.arrPlatform === tr.depPlatform ? tr.arrPlatform : `${tr.arrPlatform} → ${tr.depPlatform}`);
-    body.append(node("div", "xsub", platforms.join(" · ")));
-
     const catchPct = tr.catchByMin ? tr.catchByMin[String(t)] : undefined;
     const chips = node("div", "xchips");
     if (catchPct !== undefined) {
@@ -370,19 +362,11 @@
   function routeHeader(r) {
     const head = node("div", "rt-head");
     const dep = r.realDep || r.plannedDep, arr = r.realArr || r.plannedArr;
-    const late = r.realArr && r.plannedArr ? Math.round((r.realArr - r.plannedArr) / 60) : 0;
     const top = node("div", "rt-top");
     top.append(node("b", "rt-span", `${hhmm(dep)} → ${hhmm(arr)}`), node("span", "rt-dur", `${r.minutes} min`));
     head.append(top);
-    const sub = node("div", "rt-sub");
-    const rides = r.legs.filter((l) => l.line);
-    const seq = node("span", "rt-seq");
-    for (const l of rides) seq.append(badge(l.line, l.mode));
-    sub.append(seq, node("span", "", rides.length > 1 ? `${rides.length - 1} Umstieg${rides.length > 2 ? "e" : ""}` : "direkt"));
-    if (late) sub.append(node("span", "chip " + (late >= 5 ? "bad" : "mid"), `${signed(late)} min am Ziel`));
-    const ticket = (r.tickets || [])[0];
-    if (ticket) sub.append(node("span", "rt-fare", `${num(ticket.price.toFixed(2))} €${ticket.level ? ` · ${ticket.level}` : ""}`));
-    head.append(sub);
+    const rides = r.legs.filter((l) => l.line).length;
+    if (rides > 1) head.append(node("div", "rt-sub", `${rides - 1} Umstieg${rides > 2 ? "e" : ""}`));
     return head;
   }
 
