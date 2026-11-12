@@ -181,6 +181,26 @@ class CollectNetworkTest(unittest.TestCase):
             self.assertEqual(network.collect_ferry(client_for(gti), Config(ferry=None), now=self.NOW), [])
             self.assertEqual(gti.requests, [])
 
+    def test_bus_5_keeps_only_its_line_in_its_own_measurement(self):
+        answer = {
+            "returnCode": "OK",
+            "journeys": [
+                journey("5", "Hauptbahnhof/ZOB", "METROBUS", segments=RUN),
+                journey("15", "Hauptbahnhof/ZOB", "METROBUS", segments=RUN),
+                journey("25", "Hauptbahnhof/ZOB", "METROBUS", segments=RUN),
+            ],
+        }
+        with FakeGti(responses={"getVehicleMap": answer}) as gti:
+            lines = network.collect_bus(client_for(gti), Config(), now=self.NOW)
+        body = gti.requests[0][1]
+        self.assertEqual(body["vehicleTypes"], ["METROBUS"])
+        self.assertTrue(lines and all(l.startswith("hvv_bus_stop,") for l in lines))
+        self.assertEqual({field(l, "line") for l in lines}, {"5"})
+        self.assertEqual({field(l, "mode") for l in lines}, {"B"})
+        with FakeGti() as gti:
+            self.assertEqual(network.collect_bus(client_for(gti), Config(bus=None), now=self.NOW), [])
+            self.assertEqual(gti.requests, [])
+
     def test_xbus_denial_is_tracked_separately_from_the_network(self):
         denied = {"vehicle_map"}
         with FakeGti(responses={"getVehicleMap": {"returnCode": "OK", "journeys": []}}) as gti:

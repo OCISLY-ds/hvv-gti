@@ -16,10 +16,12 @@ const motion = window.HvvMotion;
 const animator = new motion.Animator(() => tracks);
 const hidden = new Set();
 const isX = (line) => /^X/.test(line); // X-Busse (Xpressbus)
+let busLines = new Set(); // einzelne Metrobuslinien (Bus 5), die der Server zusaetzlich liefert (/api/config)
+const isBus = (line) => isX(line) || busLines.has(line); // alles, was als Bus (Haltestellen ab Zoom 12,5, magenta/Logofarbe) gezeichnet wird
 // Kategorien, die der Nutzer komplett ein- und ausblenden kann (Haken im Panel)
-const CATEGORIES = [["S", "S-Bahn"], ["U", "U-Bahn"], ["RE", "RE"], ["RB", "RB"], ["X", "X-Busse"], ["O", "Sonstige"]];
-const catOf = (line) => (/^S\d/.test(line) ? "S" : /^U\d/.test(line) ? "U" : /^RE\d/.test(line) ? "RE" : /^RB\d/.test(line) ? "RB" : isX(line) ? "X" : "O");
-const SYMBOLS = { S: "S", U: "U", RE: "RE", RB: "RB", X: "X", O: "…" }; // Beschriftung der Kategorie-Schalter
+const CATEGORIES = [["S", "S-Bahn"], ["U", "U-Bahn"], ["RE", "RE"], ["RB", "RB"], ["X", "X-Busse"], ["B", "Metrobus"], ["O", "Sonstige"]];
+const catOf = (line) => (/^S\d/.test(line) ? "S" : /^U\d/.test(line) ? "U" : /^RE\d/.test(line) ? "RE" : /^RB\d/.test(line) ? "RB" : isX(line) ? "X" : busLines.has(line) ? "B" : "O");
+const SYMBOLS = { S: "S", U: "U", RE: "RE", RB: "RB", X: "X", B: "B", O: "…" }; // Beschriftung der Kategorie-Schalter
 const COLLAPSED = new Set(["RE", "RB"]); // in der Liste standardmaessig eingeklappt
 const showCat = Object.fromEntries(CATEGORIES.map(([c]) => [c, true]));
 const isShown = (line) => showCat[catOf(line)];
@@ -167,7 +169,7 @@ function geometrySignature() {
   for (const t of Object.values(tracks)) {
     n++;
     points += t.p.length;
-    if (t.l.every(isX)) bus++;
+    if (t.l.every(isBus)) bus++;
   }
   return `${n}:${points}:${bus}`;
 }
@@ -181,7 +183,7 @@ function corridors() {
       box[0] = Math.min(box[0], P[i]); box[1] = Math.min(box[1], P[i + 1]);
       box[2] = Math.max(box[2], P[i]); box[3] = Math.max(box[3], P[i + 1]);
     }
-    return { key, t, P, poly: makePoly(P), S: sampleEvery(P, 15), box, bus: t.l.every(isX), root: null };
+    return { key, t, P, poly: makePoly(P), S: sampleEvery(P, 15), box, bus: t.l.every(isBus), root: null };
   });
   const find = (x) => { while (x.root) x = x.root; return x; };
   // Vorauswahl ueber ein Zellraster: ein Paar kommt nur in Frage, wenn von jedem Abschnitt mindestens MERGE_SHARE der Stuetzpunkte
@@ -553,7 +555,7 @@ function stationGeoJson() {
     type: "FeatureCollection",
     features: Object.entries(stations)
       .filter(([, s]) => s.l.some(isShown))
-      .map(([k, s]) => ({ type: "Feature", properties: { k, n: s.n, b: s.l.every(isX) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.x, s.y] } })),
+      .map(([k, s]) => ({ type: "Feature", properties: { k, n: s.n, b: s.l.every(isBus) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.x, s.y] } })),
   };
 }
 
@@ -1075,9 +1077,14 @@ function setupPanel() {
 // Haken je Kategorie im Panel; die Wahl merkt sich der Browser (X-Busse: auch die alte Einstellung "showXbus")
 function setupCategories(cfg) {
   const box = document.getElementById("cats");
+  busLines = new Set(cfg.bus || []);
   for (const [c, name] of CATEGORIES) {
     if (c === "X" && !cfg.xbus) {
       showCat.X = false;
+      continue;
+    }
+    if (c === "B" && !busLines.size) {
+      showCat.B = false;
       continue;
     }
     const saved = storage.get("cat" + c) ?? (c === "X" ? storage.get("showXbus") : null);

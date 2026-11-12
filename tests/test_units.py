@@ -45,7 +45,7 @@ class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         cfg = Config.from_env({})
         self.assertEqual(cfg.routes, ROUTES)
-        self.assertEqual({r.line for r in cfg.routes}, {"S5", "S7", "S7-SEV", "X30", "234", "4", "RE5"})
+        self.assertEqual({r.line for r in cfg.routes}, {"S5", "S7", "S7-SEV", "X30", "234", "4", "5", "RE5"})
         self.assertFalse(cfg.collect_arrivals)
 
     def test_overrides_and_bool(self):
@@ -103,6 +103,8 @@ class RoutesTest(unittest.TestCase):
             ("234", "Leuschnerstraße"),
             ("4", "Überseequartier"),
             ("4", "Eidelstedt"),
+            ("5", "Hauptbahnhof"),
+            ("5", "Niendorf / Burgwedel"),
             ("RE5", "Hamburg"),
             ("RE5", "Cuxhaven"),
         ]:

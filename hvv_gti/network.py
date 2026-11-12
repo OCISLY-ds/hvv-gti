@@ -9,7 +9,7 @@ from .influx import line_protocol
 log = logging.getLogger("hvv_gti.network")
 
 MEASUREMENT = "hvv_network_stop"
-MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X", "SCHIFF": "F"}
+MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X", "SCHIFF": "F", "METROBUS": "B"}
 
 
 def parse_journey(journey: dict, now_ts: int, horizon_s: int, measurement: str = MEASUREMENT) -> list[str]:
@@ -72,6 +72,11 @@ def collect_ferry(client: GtiClient, cfg: Config, now: datetime | None = None, d
     return _collect(client, cfg.ferry, now, denied, "vehicle_map_ferry")
 
 
+def collect_bus(client: GtiClient, cfg: Config, now: datetime | None = None, denied: set[str] | None = None) -> list[str]:
+    """Wie `collect_network` fuer Bus 5 (Metrobus, nur diese Linie), Messung `hvv_bus_stop`."""
+    return _collect(client, cfg.bus, now, denied, "vehicle_map_bus")
+
+
 def _collect(client: GtiClient, network: Network | None, now: datetime | None, denied: set[str] | None, key: str) -> list[str]:
     denied = denied if denied is not None else set()
     if network is None or key in denied:
@@ -98,6 +103,8 @@ def _collect(client: GtiClient, network: Network | None, now: datetime | None, d
     journeys = drop_ghosts(response.get("journeys", []))  # verspaetete Fahrten liefert die GTI auch als Geisterfahrt mit 0 min
     lines: list[str] = []
     for journey in journeys:
+        if network.lines and journey.get("line", {}).get("name") not in network.lines:
+            continue
         if network.line_prefixes and not (journey.get("line", {}).get("name") or "").startswith(network.line_prefixes):
             continue
         lines.extend(parse_journey(journey, now_ts, network.horizon_s, network.measurement))

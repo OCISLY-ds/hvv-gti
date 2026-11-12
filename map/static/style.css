@@ -54,6 +54,7 @@ html,body{margin:0;height:100%;background:#16202e;font:14px system-ui,sans-serif
 .sym-U{background:#1a6fb5}
 .sym-RE,.sym-RB{background:#fff;color:#1b2636;font-size:11px}
 .sym-X{background:#a61e8c}
+.sym-B{background:#d4141c}
 .sym-O{background:#5a6679}
 #legend .ghead{display:flex;align-items:center;gap:6px;margin:6px 0 2px;padding:3px 4px;color:#9aa6b8;font-size:12px;font-weight:600;cursor:pointer;border-radius:5px}
 #legend .ghead:hover{background:#ffffff14}

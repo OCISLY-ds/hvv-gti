@@ -72,6 +72,11 @@ ROUTES: tuple[Route, ...] = (
     # in der Mitte der Linie (beide Richtungen). Wildacker und Langenfelder Damm (Kurzfahrt) liegen beide im Westen.
     Route("4", "4", "BUS", *RATHAUSMARKT, heading="Überseequartier", directions=("Osakaallee",), max_list=120),
     Route("4", "4", "BUS", *RATHAUSMARKT, heading="Eidelstedt", max_list=120),
+    # Bus 5 (Metrobus, Hochbahn): Hauptbahnhof/ZOB - Rathausmarkt - Dammtor - Hoheluftbruecke - Nedderfeld - U Niendorf Markt / A Burgwedel.
+    # Auch am Rathausmarkt, gleiche Abfrage wie Bus 4 (BUS) und damit kein zusaetzlicher Aufruf. Ziele ab hier: Hauptbahnhof/ZOB
+    # oder (stadtauswaerts) U Niendorf Markt, A Burgwedel, Nedderfeld (Kehre).
+    Route("5", "5", "BUS", *RATHAUSMARKT, heading="Hauptbahnhof", directions=("Hauptbahnhof",), max_list=120),
+    Route("5", "5", "BUS", *RATHAUSMARKT, heading="Niendorf / Burgwedel", max_list=120),
     # RE5 Cuxhaven-Stade-Hamburg: Abfahrten in Stade in beide Richtungen (Hamburg: Ziel Hbf oder Harburg).
     Route("RE5", "RE5", "ZUG", *STADE, heading="Hamburg", directions=("Hamburg",)),
     Route("RE5", "RE5", "ZUG", *STADE, heading="Cuxhaven", directions=("Cuxhaven",)),
@@ -134,6 +139,7 @@ class Network:
     horizon_s: int = 300
     measurement: str = "hvv_network_stop"
     line_prefixes: tuple[str, ...] = ()  # nur Linien, deren Name so beginnt (leer: alle)
+    lines: tuple[str, ...] = ()  # nur diese Linien, Name genau (leer: alle)
 
 
 NETWORK = Network(
@@ -178,6 +184,18 @@ FERRY = Network(
 )
 
 
+# Bus 5 (Metrobus, getVehicleMap-Typ METROBUS): Der Typ umfasst alle Metrobusse (~500 Fahrten in 15 Minuten), deshalb ein enges
+# Gebiet um die Strecke (Hauptbahnhof - Dammtor - Hoheluftbruecke - Niendorf - Burgwedel) und der Linienfilter `lines`.
+BUS5 = Network(
+    name="Bus 5 (Metrobus)",
+    vehicle_types=("METROBUS",),
+    bbox=(9.82, 53.54, 10.04, 53.70),
+    horizon_s=900,
+    measurement="hvv_bus_stop",
+    lines=("5",),
+)
+
+
 @dataclass(frozen=True)
 class Config:
     gti_user: str = ""
@@ -191,6 +209,7 @@ class Config:
     xbus: Network | None = XBUS
     regional: Network | None = REGIONAL
     ferry: Network | None = FERRY
+    bus: Network | None = BUS5
     poll_interval: float = 60.0
     # Stoerungsmeldungen aendern sich selten und die Antwort ist gross (~75 KB); 0 schaltet sie ab.
     announcement_interval: float = 300.0

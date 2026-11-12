@@ -249,6 +249,37 @@ class VehicleFeedTest(unittest.TestCase):
         self.assertEqual((len(feed.tracks), set(feed.stations)), (1, {"SA", "SB"}))
         self.assertEqual([j["m"] for j in data["journeys"]], ["X"])
 
+    def test_bus_5_is_fetched_separately_with_its_own_area_and_only_its_line(self):
+        soon = int(time.time()) + 10
+
+        class ByType:
+            def __init__(self):
+                self.calls = []
+
+            def get_vehicle_map(self, lower_left, upper_right, begin, end, **kwargs):
+                types = kwargs.get("vehicle_types")
+                self.calls.append((types, lower_left, upper_right))
+                if types == ["METROBUS"]:  # die GTI liefert alle Metrobusse, die Karte behaelt nur die 5
+                    return {"journeys": [journey("5", soon, "METROBUS", "b5"), journey("15", soon, "METROBUS", "b15")]}
+                return {"journeys": [journey("S1", soon)]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = ByType()
+            feed = web.VehicleFeed(client, Path(tmp))
+            data = feed._fetch(first=False)
+        self.assertEqual(sorted((j["l"], j["m"]) for j in data["journeys"]), [("5", "B"), ("S1", "S")])
+        main = [c for c in client.calls if c[0] != ["METROBUS"] and c[0] != ["S_BAHN"]]
+        self.assertNotIn("METROBUS", main[0][0])  # nicht im grossen Hauptabruf
+        bus = [c for c in client.calls if c[0] == ["METROBUS"]]
+        self.assertEqual(bus[0][1:], ((web.BUS5.bbox[0], web.BUS5.bbox[1]), (web.BUS5.bbox[2], web.BUS5.bbox[3])))
+
+    def test_bus_can_be_switched_off(self):
+        client = FakeClient({"journeys": []})
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = web.VehicleFeed(client, Path(tmp), bus=None)
+            feed._fetch(first=False)
+        self.assertEqual(client.calls, 2)
+
     def test_all_re_and_rb_lines_of_the_regional_trains_are_shown(self):
         soon = int(time.time()) + 10
         trains = [journey("RE4", soon, "R_BAHN"), journey("RE5", soon, "R_BAHN"), journey("RB81", soon, "R_BAHN"), journey("IC", soon, "R_BAHN"), journey("S1", soon)]
@@ -293,7 +324,7 @@ class VehicleFeedTest(unittest.TestCase):
             feed = web.VehicleFeed(client, Path(tmp), refresh_s=60)
             feed.vehicles()
             feed.vehicles()
-            self.assertEqual(client.calls, 2)  # ein Abruf fuer die Karte, einer fuer die ergaenzten Abschnitte (S5 Dollern - Stade)
+            self.assertEqual(client.calls, 3)  # ein Abruf fuer die Karte, je einer fuer die ergaenzten Abschnitte (S5 Dollern - Stade) und Bus 5
 
 
 if __name__ == "__main__":

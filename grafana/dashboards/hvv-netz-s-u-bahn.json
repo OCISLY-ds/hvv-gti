@@ -9,7 +9,7 @@
     "oepnv"
   ],
   "schemaVersion": 41,
-  "version": 2,
+  "version": 3,
   "editable": true,
   "graphTooltip": 1,
   "timezone": "Europe/Berlin",
@@ -175,6 +175,12 @@
       "title": "Fähren",
       "type": "link",
       "url": "/d/hvv-faehren",
+      "icon": "dashboard"
+    },
+    {
+      "title": "Bus 5",
+      "type": "link",
+      "url": "/d/hvv-bus-5",
       "icon": "dashboard"
     }
   ],

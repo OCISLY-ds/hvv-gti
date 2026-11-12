@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 from .client import GtiAuthError, GtiClient, GtiError, GtiPermissionError
+from .config import BUS5, Network
 from .icons import CONTENT_TYPES, IconStore
 from .dedupe import drop_ghosts, max_delay, trip_keys
 from .extensions import EXTENSIONS, Seed, extend
@@ -30,7 +31,7 @@ from .signals import SignalIndex
 
 log = logging.getLogger("hvv_gti.web")
 
-MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X"}
+MODES = {"S_BAHN": "S", "U_BAHN": "U", "R_BAHN": "R", "XPRESSBUS": "X", "METROBUS": "B"}
 VEHICLE_TYPES = {mode: vehicle_type for vehicle_type, mode in MODES.items()}
 COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt auch den RE5 Cuxhaven - Hamburg ab
 COURSE_CACHE_S = 60
@@ -140,12 +141,14 @@ class VehicleFeed:
         window_s: int = 300,
         bbox: tuple[float, float, float, float] = (8.45, 53.10, 10.95, 54.05),
         vehicle_types: tuple[str, ...] = ("S_BAHN", "U_BAHN", "R_BAHN", "XPRESSBUS"),
+        bus: Network | None = BUS5,  # einzelne Metrobuslinien (Bus 5): eigener Abruf im engen Gebiet, nicht im Hauptabruf
     ):
         self.client = client
         self.refresh_s = refresh_s
         self.window_s = window_s
         self.bbox = bbox
         self.vehicle_types = list(vehicle_types)
+        self.bus = bus
         self.tracks_path = data_dir / "tracks.json"
         self.signals = SignalIndex.load(data_dir / "signals.json") or SignalIndex.load(SEED_SIGNALS)
         self.tracks: dict[str, dict] = {}
@@ -313,6 +316,7 @@ class VehicleFeed:
         for j in response.get("journeys", []):
             extend(j, self.seed)
         journeys_in += response.get("journeys", [])
+        journeys_in += self._bus_journeys(now, window)
         for j in drop_ghosts(journeys_in):
             line = j.get("line", {}).get("name") or "?"
             if j.get("vehicleType") == "R_BAHN" and not REGIONAL_LINE.match(line):
@@ -367,6 +371,24 @@ class VehicleFeed:
             return []
         return [j for j in response.get("journeys", []) if extend(j, self.seed)]
 
+    def _bus_journeys(self, now: int, window: int, *, wide: bool = False, without_coords: bool = False) -> list[dict]:
+        """Fahrten der Metrobuslinien aus `self.bus` (Bus 5). Der Typ METROBUS umfasst alle Metrobusse (~500 Fahrten je Abruf), deshalb
+        ein enges Gebiet und der Linienfilter; gleiche Abschnitte wie bei der Bahn, die Haltestellen und Gleise lernt die Karte mit."""
+        if self.bus is None:
+            return []
+        lon1, lat1, lon2, lat2 = self.bus.bbox
+        begin, end = (now - window, now + window) if wide else (now, now + window)
+        try:
+            response = self.client.get_vehicle_map(
+                (lon1, lat1), (lon2, lat2), begin, end, without_coords=without_coords, vehicle_types=list(self.bus.vehicle_types)
+            )
+        except GtiAuthError:
+            raise
+        except (GtiPermissionError, GtiError) as exc:
+            log.warning("getVehicleMap (%s): %s", self.bus.name, exc)
+            return []
+        return [j for j in response.get("journeys", []) if (j.get("line", {}).get("name") or "") in self.bus.lines]
+
     def vehicles(self) -> dict | None:
         """Aktueller Stand; veraltete Daten liefert der Cache weiter, waehrend genau ein Thread nachlaedt."""
         with self._state_lock:
@@ -396,17 +418,21 @@ class VehicleFeed:
     def course(self, journey_id: str, mode: str) -> dict | None:
         """Halteverlauf einer Fahrt. Ein Weitfensterabruf je Fahrzeugart wird kurz gecacht und bedient alle Klicks darauf."""
         vehicle_type = VEHICLE_TYPES.get(mode)
-        if vehicle_type not in self.vehicle_types:
+        bus = vehicle_type is not None and self.bus is not None and vehicle_type in self.bus.vehicle_types
+        if vehicle_type not in self.vehicle_types and not bus:
             return None
         with self._course_lock:
             cached = self._courses.get(vehicle_type)
             if cached is None or time.monotonic() - cached[0] > COURSE_CACHE_S:
                 now = int(time.time())
-                (lon1, lat1, lon2, lat2) = self.bbox
-                response = self.client.get_vehicle_map(
-                    (lon1, lat1), (lon2, lat2), now - COURSE_WINDOW_S, now + COURSE_WINDOW_S, without_coords=True, vehicle_types=[vehicle_type]
-                )
-                found = drop_ghosts(response.get("journeys", []))
+                if bus:
+                    found = drop_ghosts(self._bus_journeys(now, COURSE_WINDOW_S, wide=True, without_coords=True))
+                else:
+                    (lon1, lat1, lon2, lat2) = self.bbox
+                    response = self.client.get_vehicle_map(
+                        (lon1, lat1), (lon2, lat2), now - COURSE_WINDOW_S, now + COURSE_WINDOW_S, without_coords=True, vehicle_types=[vehicle_type]
+                    )
+                    found = drop_ghosts(response.get("journeys", []))
                 for candidate in found:
                     extend(candidate, self.seed)
                 cached = self._courses[vehicle_type] = (time.monotonic(), found)
@@ -484,7 +510,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(HTTPStatus.NOT_MODIFIED, b"", "application/json", {"ETag": etag})
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
-                return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types})
+                return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types, "bus": [l for l in (self.app.feed.bus.lines if self.app.feed.bus else ())]})
             if path in ("/api/stations", "/api/departures", "/api/route"):
                 return self._planner(path)
             if path == "/api/colors":
