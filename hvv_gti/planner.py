@@ -29,6 +29,7 @@ TZ = ZoneInfo("Europe/Berlin")
 ONTIME_S = 180  # "puenktlich": hoechstens 3 Minuten Verspaetung
 MIN_SAMPLES = 25  # darunter wird auf einen groeberen Zeitraum bzw. die ganze Linie zurueckgefallen
 SIMULATIONS = 4000
+TRANSFER_STEPS = range(0, 6)  # waehlbare Mindest-Umsteigezeit in Minuten (Regler in der Karte); 0 = nur der Fahrplan der GTI
 LOOKBACK = "-30d"
 CACHE_S = 600
 
@@ -199,26 +200,46 @@ class Reliability:
             }
         known = [i for i, (b, a, _) in enumerate(info) if a is not None]
         result: dict = {"legsWithData": len(known), "legs": len(rides)}
-        if rides and len(known) == len(rides):
-            ok_conn = ok_late = 0
+        n_transfers = len(rides) - 1
+        full = bool(rides) and len(known) == len(rides)
+        # Je Mindest-Umsteigezeit T (Minuten): Anteil der Simulationen, in denen alle bzw. der einzelne Anschluss erreicht wird.
+        # Alle T teilen sich dieselben Zufallsziehungen, damit die Kurve ueber T gleichmaessig faellt.
+        all_ok = {t: 0 for t in TRANSFER_STEPS}
+        all_ok_ontime = {t: 0 for t in TRANSFER_STEPS}
+        each_ok = {(i, t): 0 for i in range(1, len(rides)) for t in TRANSFER_STEPS}
+        slack = {}  # (i, t) -> Reserve in s: Zeit zwischen Ankunft und Abfahrt abzueglich Fussweg bzw. Mindest-Umsteigezeit
+        times_known = all(rides[i]["dep"] is not None and rides[i - 1]["arr"] is not None for i in range(1, len(rides)))
+        for i in range(1, len(rides) if times_known else 1):
+            buffer = rides[i]["dep"] - rides[i - 1]["arr"]
+            walk_s = (rides[i].get("transfer") or {}).get("walkMin", 0) * 60
+            for t in TRANSFER_STEPS:
+                slack[(i, t)] = buffer - max(walk_s, t * 60)
+        if rides and times_known and (full or any(info[i - 1][1] is not None for i in range(1, len(rides)))):
             for _ in range(SIMULATIONS):
-                missed = False
-                arrival = 0.0
-                for i, leg in enumerate(rides):
-                    board, alight, _ = info[i]
-                    dep_delay = self.rng.choice(board["values"]) if board else 0.0
-                    if i > 0:
-                        buffer = leg["dep"] - rides[i - 1]["arr"]
-                        if arrival - dep_delay > buffer:
-                            missed = True
-                            break
-                    arrival = self.rng.choice(alight["values"])
-                if not missed:
-                    ok_conn += 1
-                    ok_late += arrival <= ONTIME_S
-            result["connectionPct"] = round(100 * ok_conn / SIMULATIONS, 1)
-            result["ontimePct"] = round(100 * ok_late / SIMULATIONS, 1)
-            result["transfers"] = len(rides) - 1
+                board_d = [self.rng.choice(b["values"]) if b else 0.0 for b, _, _ in info]
+                alight_d = [self.rng.choice(a["values"]) if a else None for _, a, _ in info]
+                for t in TRANSFER_STEPS:
+                    ok_all = True
+                    for i in range(1, len(rides)):
+                        feeder = alight_d[i - 1]
+                        # verspaetete Zuege ziehen die Reserve auf: 1 min Reserve und 1 min Verspaetung = verpasst
+                        if feeder is not None and feeder - board_d[i] < slack[(i, t)]:
+                            each_ok[(i, t)] += 1
+                        else:
+                            ok_all = False
+                    if ok_all and full:
+                        all_ok[t] += 1
+                        all_ok_ontime[t] += alight_d[-1] <= ONTIME_S
+            if full:
+                by_min = {str(t): {"connectionPct": round(100 * all_ok[t] / SIMULATIONS, 1), "ontimePct": round(100 * all_ok_ontime[t] / SIMULATIONS, 1)} for t in TRANSFER_STEPS}
+                result["byMinTransfer"] = by_min
+                result["connectionPct"] = by_min["0"]["connectionPct"]  # ohne zusaetzliche Mindestzeit
+                result["ontimePct"] = by_min["0"]["ontimePct"]
+                result["transfers"] = n_transfers
+            for i in range(1, len(rides)):
+                transfer = rides[i].get("transfer")
+                if transfer is not None and info[i - 1][1] is not None:
+                    transfer["catchByMin"] = {str(t): round(100 * each_ok[(i, t)] / SIMULATIONS, 1) for t in TRANSFER_STEPS}
         cancels = [c for _, _, c in info]
         known_cancel = [c for c in cancels if c is not None]
         if known_cancel:
@@ -400,4 +421,26 @@ def normalize_route(schedule: dict) -> list[dict]:
             )
         elif dep is not None and arr is not None:
             legs.append({**base, "line": None, "walkMin": round((arr - dep) / 60)})
+    annotate_transfers(legs)
     return legs
+
+
+def annotate_transfers(legs: list[dict]) -> None:
+    """Haengt an jede Fahrt nach der ersten ein `transfer`: Station, Zeit bis zur Abfahrt, Ankunfts- und Abfahrtsgleis, Fussweg."""
+    previous = None
+    walk_s = 0
+    for leg in legs:
+        if not leg.get("line"):
+            walk_s += (leg["arr"] - leg["dep"]) if leg.get("arr") is not None and leg.get("dep") is not None else 0
+            continue
+        if previous is not None and previous.get("arr") is not None and leg.get("dep") is not None:
+            wait = leg["dep"] - previous["arr"]
+            leg["transfer"] = {
+                "station": previous["to"]["name"],
+                "waitMin": round(wait / 60),
+                "walkMin": round(walk_s / 60),
+                "arrPlatform": previous["to"]["platform"],
+                "depPlatform": leg["from"]["platform"],
+                "arr": previous["arr"],
+            }
+        previous, walk_s = leg, 0

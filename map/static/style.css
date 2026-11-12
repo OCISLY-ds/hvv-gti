@@ -131,7 +131,8 @@ body.sheet-side #panel{display:none}
 #route #pl-from{grid-column:1;grid-row:1}
 #route #pl-swap{grid-column:2;grid-row:1 / span 2;border:1px solid #ffffff2e;border-radius:7px;background:#ffffff14;color:#e8eef8;font-size:16px;cursor:pointer}
 #route #pl-to{grid-column:1;grid-row:2}
-#route .when,#route .go{grid-column:1 / span 2}
+#route .when,#route .go,#route .mint{grid-column:1 / span 2}
+#route .mint{display:flex;align-items:center;gap:10px;font-size:12px;color:#c0c9d8}#route .mint span{flex:none;min-width:150px}#route .mint b{color:#e8eef8}#route .mint input{padding:0;border:0;background:none;accent-color:#4da3ff}
 #route .when{display:flex;gap:6px}
 #route .when select{width:96px;flex:none}
 #pl-result{overflow:auto;padding:0 12px 12px;overscroll-behavior:contain}
@@ -147,6 +148,8 @@ body.sheet-side #panel{display:none}
 .leg .d2{font-size:11px;color:#9aa6b8}
 .leg .stat{color:#7f8da3}
 .leg.walk .walkt{color:#9aa6b8;font-size:12px}
+.leg.xfer{padding:2px 0 2px 0}.leg.xfer .t{color:#9aa6b8;font-weight:400;font-size:12px}.leg.xfer .xt{font-size:12px;color:#c0c9d8}
+.leg .d2.xok{color:#58d18a}.leg .d2.xmid{color:#ffb454}.leg .d2.xbad{color:#ff7a8a;font-weight:600}.leg .d2.arr{color:#9aa6b8}
 .leg .dl.ok{color:#58d18a;background:#2a8a4a33}
 .leg .dl.late1,.rhead .dl.late1{color:#ffb454;background:#d9770633}
 .leg .dl.late2,.rhead .dl.late2{color:#ff7a8a;background:#d0021b33}

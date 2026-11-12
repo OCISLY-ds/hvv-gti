@@ -178,17 +178,43 @@
     return row;
   }
 
+  let lastData = null;
+  const minTransfer = () => Number($("pl-min").value) || 0;
+  const minLabel = (t) => (t === 0 ? "nur Fahrplan" : `mind. ${t} min`);
+
   function reliability(rel, minutes) {
     const box = node("div", "rel");
-    if (rel.ontimePct !== undefined) {
-      box.append(meter("Pünktlich am Ziel (≤ 3 min)", rel.ontimePct, "Wahrscheinlichkeit, dass die Fahrt höchstens 3 Minuten verspätet ankommt."));
-      if (rel.transfers) box.append(meter(`Anschluss${rel.transfers > 1 ? "züge" : ""} erreicht`, rel.connectionPct, `${rel.transfers} Umstieg${rel.transfers > 1 ? "e" : ""} nach Fahrplan.`));
+    const by = (rel.byMinTransfer || {})[String(minTransfer())] || rel; // Werte zur gewählten Mindest-Umsteigezeit
+    if (by.ontimePct !== undefined) {
+      box.append(meter("Pünktlich am Ziel (≤ 3 min)", by.ontimePct, "Wahrscheinlichkeit, dass die Fahrt höchstens 3 Minuten verspätet ankommt, einschließlich verpasster Anschlüsse."));
+      if (rel.transfers) box.append(meter(`Anschluss${rel.transfers > 1 ? "züge" : ""} erreicht`, by.connectionPct, `${rel.transfers} Umstieg${rel.transfers > 1 ? "e" : ""}, Umsteigezeit: ${minLabel(minTransfer())}.`));
     } else {
       box.append(node("div", "hint", rel.unavailable ? "Messdaten derzeit nicht erreichbar – Verbindung ohne Zuverlässigkeitsangabe." : rel.legs ? `Für ${rel.legsWithData} von ${rel.legs} Abschnitten liegen Messdaten vor – keine Gesamtprognose möglich.` : "Keine Fahrt mit Linie."));
     }
     if (rel.cancelPct !== undefined) box.append(meter("Ausfallrisiko", rel.cancelPct, `Gemessen für ${rel.cancelCoverage}; für die übrigen Linien erfasst die Karte keine Ausfälle.`, true));
     else if (!rel.unavailable) box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
     return box;
+  }
+
+  function transferRow(tr) {
+    const t = minTransfer();
+    const catchPct = tr.catchByMin ? tr.catchByMin[String(t)] : undefined;
+    const row = node("div", "leg xfer");
+    row.append(node("span", "t", hhmm(tr.arr)));
+    const mid = node("span", "mid");
+    const wait = tr.waitMin <= 0 ? "keine Wartezeit" : `${tr.waitMin} min Zeit`;
+    const platforms = tr.arrPlatform && tr.depPlatform && tr.arrPlatform !== tr.depPlatform ? ` · ${tr.arrPlatform} → ${tr.depPlatform}` : tr.depPlatform ? ` · ${tr.depPlatform}` : "";
+    mid.append(node("span", "d1 xt", `Umstieg ${tr.station}: ${wait}${tr.walkMin ? ` (davon ${tr.walkMin} min Fußweg)` : ""}${platforms}`));
+    if (catchPct !== undefined) {
+      const hint = node("span", "d2 " + (catchPct >= 90 ? "xok" : catchPct >= 60 ? "xmid" : "xbad"), `Anschluss wird zu ca. ${pct(catchPct)} erreicht`);
+      const reserve = tr.waitMin - Math.max(tr.walkMin || 0, t);
+      hint.title = reserve > 0
+        ? `Reserve: ${reserve} min (Zeit bis zur Abfahrt abzüglich ${t > (tr.walkMin || 0) ? "gewählter Mindest-Umsteigezeit" : "Fußweg"}). Ein Zubringer, der ${reserve} min oder mehr zu spät kommt, gilt als verpasst. Aus den gemessenen Verspätungen von Zubringer und Anschlusszug.`
+        : "Keine Reserve: schon ein pünktlicher Zubringer reicht nicht für die gewählte Umsteigezeit.";
+      mid.append(hint);
+    }
+    row.append(mid);
+    return row;
   }
 
   function legRow(leg) {
@@ -201,8 +227,11 @@
     const mid = node("span", "mid");
     mid.append(node("span", "d1", `${leg.from.name} → ${leg.to.name}`));
     const sub = [`Richtung ${leg.direction}`];
-    if (leg.from.platform) sub.push(leg.from.platform);
+    if (leg.from.platform) sub.push(`ab ${leg.from.platform}`);
     mid.append(node("span", "d2", sub.join(" · ")));
+    const arrive = [`an ${hhmm(leg.arr)}`];
+    if (leg.to.platform) arrive.push(leg.to.platform);
+    mid.append(node("span", "d2 arr", arrive.join(" · ")));
     if (leg.stats && leg.stats.alight) {
       const a = leg.stats.alight;
       const s = node("span", "d2 stat", `${leg.line}: pünktlich ${pct(a.ontimePct)} · Ø ${String(a.avgMin).replace(".", ",")} min · n=${a.n} (${a.scope})`);
@@ -216,6 +245,7 @@
   }
 
   function renderRoutes(data) {
+    lastData = data;
     const out = $("pl-result");
     out.replaceChildren();
     if (!data.routes.length) {
@@ -236,7 +266,11 @@
         head.append(tag);
       }
       card.append(head);
-      for (const leg of r.legs) card.append(legRow(leg));
+      for (const leg of r.legs) {
+        if (!leg.line && leg.from.id === leg.to.id) continue; // Umstieg innerhalb der Station: kommt als Umstiegszeile
+        if (leg.transfer) card.append(transferRow(leg.transfer));
+        card.append(legRow(leg));
+      }
       card.append(reliability(r.reliability, r.minutes));
       out.append(card);
     }
@@ -265,6 +299,17 @@
     wireSuggest("to");
     $("pl-when").value = nowLocalInput();
     $("pl-go").onclick = search;
+    try {
+      const saved = localStorage.getItem("hvv.minTransfer");
+      if (saved !== null) $("pl-min").value = saved;
+    } catch (e) { /* ohne Speicher gilt der Standard */ }
+    const showMin = () => ($("pl-min-val").textContent = minLabel(minTransfer()));
+    showMin();
+    $("pl-min").addEventListener("input", () => {
+      showMin();
+      try { localStorage.setItem("hvv.minTransfer", String(minTransfer())); } catch (e) { /* egal */ }
+      if (lastData) renderRoutes(lastData); // Anschlüsse sofort neu bewerten, kein neuer Abruf nötig
+    });
     $("pl-swap").onclick = () => {
       const a = ends.from, b = ends.to;
       setEnd("from", b);

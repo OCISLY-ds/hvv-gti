@@ -1,3 +1,4 @@
+import json
 import random
 import unittest
 from datetime import datetime, timedelta
@@ -73,6 +74,34 @@ class PlannerHelperTests(unittest.TestCase):
         self.assertEqual(legs[1]["walkMin"], 3)
         self.assertEqual(legs[2]["dep"] - legs[0]["arr"], 5 * 60)
 
+    def test_transfer_carries_wait_station_and_both_platforms(self):
+        schedule = {
+            "scheduleElements": [
+                {
+                    "from": {"name": "Bergedorf", "id": "Master:1", "depTime": {"date": "12.11.2026", "time": "15:28"}, "platform": "Gleis 4"},
+                    "to": {"name": "Hamburg Hbf", "id": "Master:2", "arrTime": {"date": "12.11.2026", "time": "15:49"}, "platform": "Gleis 1 (S-Bahn)"},
+                    "line": {"name": "S7", "direction": "Altona", "type": {"simpleType": "TRAIN"}},
+                },
+                {
+                    "from": {"name": "Hamburg Hbf", "id": "Master:2", "depTime": {"date": "12.11.2026", "time": "15:49"}, "platform": "Gleis 1 (S-Bahn)"},
+                    "to": {"name": "Hamburg Hbf", "id": "Master:2", "arrTime": {"date": "12.11.2026", "time": "15:49"}, "platform": "Gleis 2 (S-Bahn)"},
+                    "line": {"name": "Umstiegsfußweg", "type": {"simpleType": "CHANGE"}},
+                },
+                {
+                    "from": {"name": "Hamburg Hbf", "id": "Master:2", "depTime": {"date": "12.11.2026", "time": "15:50"}, "platform": "Gleis 2 (S-Bahn)"},
+                    "to": {"name": "Dammtor", "id": "Master:3", "arrTime": {"date": "12.11.2026", "time": "15:52"}, "platform": "Gleis 1"},
+                    "line": {"name": "S5", "direction": "Elbgaustraße", "type": {"simpleType": "TRAIN"}},
+                },
+            ]
+        }
+        legs = normalize_route(schedule)
+        self.assertEqual(legs[0]["to"]["platform"], "Gleis 1 (S-Bahn)")  # Ankunftsgleis kommt mit
+        self.assertNotIn("transfer", legs[0])
+        transfer = legs[2]["transfer"]
+        self.assertEqual((transfer["station"], transfer["waitMin"], transfer["walkMin"]), ("Hamburg Hbf", 1, 0))
+        self.assertEqual((transfer["arrPlatform"], transfer["depPlatform"]), ("Gleis 1 (S-Bahn)", "Gleis 2 (S-Bahn)"))
+        self.assertEqual(transfer["arr"], legs[0]["arr"])
+
     def test_pick_window_falls_back_to_all_times(self):
         when = datetime(2026, 11, 7, 13, 0, tzinfo=TZ)
         night = [(datetime(2026, 11, 3, 3, 0, tzinfo=TZ).timestamp() + i, 60.0) for i in range(30)]
@@ -97,6 +126,56 @@ class ReliabilityTests(unittest.TestCase):
         delays = {("S1", "Wedel"): 0.0, ("S1", "Altona"): 600.0, ("S11", "Altona"): 0.0, ("S11", "Flughafen"): 0.0}
         out = Reliability(reader(delays), random.Random(1)).assess(normalize_route(SCHEDULE), self.when)
         self.assertEqual((out["connectionPct"], out["ontimePct"]), (0.0, 0.0))  # 5 min Umstieg, Zubringer immer 10 min spaet
+
+    def schedule_with_gap(self, walk_min, wait_min):
+        """SCHEDULE mit `walk_min` Fussweg und `wait_min` Warten nach dem Fussweg (Summe = Zeit zwischen Ankunft und Abfahrt)."""
+        schedule = json.loads(json.dumps(SCHEDULE))
+        elements = schedule["scheduleElements"]
+        elements[0]["to"]["arrTime"]["time"] = "13:30"
+        elements[1]["from"]["depTime"]["time"] = "13:30"
+        elements[1]["to"]["arrTime"]["time"] = f"13:{30 + walk_min}"
+        elements[2]["from"]["depTime"]["time"] = f"13:{30 + walk_min + wait_min}"
+        return schedule
+
+    def assess_with_feeder_delay(self, schedule, feeder_s, connecting_s=0.0):
+        delays = {("S1", "Wedel"): 0.0, ("S1", "Altona"): feeder_s, ("S11", "Altona"): connecting_s, ("S11", "Flughafen"): 0.0}
+        legs = normalize_route(schedule)
+        out = Reliability(reader(delays), random.Random(1)).assess(legs, self.when)
+        return out, legs[2]["transfer"]
+
+    def test_delay_equal_to_the_planned_buffer_misses_the_connection(self):
+        """HVV-App sagt 3 min Umstieg passt; der Zubringer kommt 3 min zu spaet -> verpasst, bei 2 min Verspaetung noch erreicht."""
+        schedule = self.schedule_with_gap(walk_min=0, wait_min=3)
+        late3, _ = self.assess_with_feeder_delay(schedule, 180.0)
+        late2, transfer = self.assess_with_feeder_delay(schedule, 120.0)
+        self.assertEqual(late3["connectionPct"], 0.0)
+        self.assertEqual(late2["connectionPct"], 100.0)
+        self.assertEqual(transfer["catchByMin"]["0"], 100.0)
+
+    def test_walk_counts_and_one_minute_slack_tolerates_no_minute_of_delay(self):
+        """2 min Fussweg + 1 min Warten: ein 1 min verspaeteter Zug gilt als verpasst, ein puenktlicher nicht."""
+        schedule = self.schedule_with_gap(walk_min=2, wait_min=1)
+        self.assertEqual(self.assess_with_feeder_delay(schedule, 0.0)[0]["connectionPct"], 100.0)
+        self.assertEqual(self.assess_with_feeder_delay(schedule, 60.0)[0]["connectionPct"], 0.0)
+
+    def test_min_transfer_time_overrides_a_shorter_planned_gap(self):
+        """Der Regler ersetzt den Fussweg nur, wenn er groesser ist (max, keine Summe); 1 min Zeit reicht dann nie fuer 2 min."""
+        schedule = self.schedule_with_gap(walk_min=0, wait_min=1)
+        out, transfer = self.assess_with_feeder_delay(schedule, 0.0)
+        by_min = {int(k): v["connectionPct"] for k, v in out["byMinTransfer"].items()}
+        self.assertEqual((by_min[0], by_min[1], by_min[2]), (100.0, 0.0, 0.0))  # bei T=1 bleibt keine Reserve mehr
+        self.assertEqual(transfer["catchByMin"]["0"], 100.0)
+        self.assertEqual(transfer["catchByMin"]["3"], 0.0)
+
+    def test_connection_probability_never_rises_with_larger_min_transfer(self):
+        schedule = self.schedule_with_gap(walk_min=1, wait_min=4)
+        delays = {("S1", "Wedel"): 0.0, ("S1", "Altona"): 0.0, ("S11", "Altona"): 0.0, ("S11", "Flughafen"): 0.0}
+        reliability = Reliability(reader(delays), random.Random(3))
+        reliability.reader.delays = lambda m, line, st: [(datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp() + i, 60.0 * (i % 4)) for i in range(60)]
+        out = reliability.assess(normalize_route(schedule), self.when)
+        values = [out["byMinTransfer"][str(t)]["connectionPct"] for t in planner.TRANSFER_STEPS]
+        self.assertEqual(values, sorted(values, reverse=True))
+        self.assertLess(values[-1], values[0])
 
     def test_missing_data_gives_no_percentages_and_known_cancel_rate(self):
         r = Reliability(reader({}, cancel={"S1": 0.1}), random.Random(1))
