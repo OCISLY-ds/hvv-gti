@@ -208,8 +208,6 @@ button { cursor: pointer; }
 .age { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 0 6px; font-size: 14px; color: var(--mute); }
 .age .age-text { min-width: 0; }
 .age b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.age.stale b { color: var(--mid); }
-.age.stale::before { content: "Vielleicht veraltet · "; color: var(--mid); font-weight: 600; }
 .age .refresh { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--primary); font-size: 14px; font-weight: 600; }
 .age .refresh svg { width: 18px; height: 18px; }
 .age .refresh:active { background: var(--sunken); }

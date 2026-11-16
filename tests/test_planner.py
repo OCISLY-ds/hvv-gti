@@ -217,6 +217,8 @@ class ReliabilityTests(unittest.TestCase):
         out = r.assess(normalize_route(SCHEDULE), self.when)
         self.assertNotIn("ontimePct", out)
         self.assertEqual((out["cancelPct"], out["cancelCoverage"]), (10.0, "1 von 2 Abschnitten"))
+        self.assertEqual(len(out["cancelMissing"]), 1)
+        self.assertTrue(out["cancelMissing"][0].startswith("S11 ("), out["cancelMissing"])
 
     def test_influx_failure_does_not_break_the_route(self):
         class Broken:

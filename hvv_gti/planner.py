@@ -267,6 +267,8 @@ class Reliability:
                 survive *= 1 - c["rate"]
             result["cancelPct"] = round(100 * (1 - survive), 1)
             result["cancelCoverage"] = f"{len(known_cancel)} von {len(rides)} Abschnitten"
+            # Abschnitte ohne Ausfallmessung, damit die Oberflaeche sagen kann, welche es sind
+            result["cancelMissing"] = [f"{leg['line']} ({leg['from']['name']} → {leg['to']['name']})" for leg, (_, _, c) in zip(rides, info) if c is None]
         return result
 
 

@@ -484,7 +484,11 @@
     } else {
       box.append(node("div", "hint", rel.unavailable ? "Messdaten derzeit nicht erreichbar – Verbindung ohne Zuverlässigkeitsangabe." : rel.legs ? `Für ${rel.legsWithData} von ${rel.legs} Abschnitten liegen Messdaten vor – keine Gesamtprognose möglich.` : "Keine Fahrt mit Linie."));
     }
-    if (rel.cancelPct !== undefined) box.append(meter("Ausfallrisiko", rel.cancelPct, `Gemessen für ${rel.cancelCoverage}; für die übrigen Linien erfasst der Dienst keine Ausfälle.`, true));
+    if (rel.cancelPct !== undefined) {
+      const missing = rel.cancelMissing || [];
+      const hint = missing.length ? `Gemessen für ${rel.cancelCoverage}. Für ${missing.join(", ")} erfasst der Dienst keine Ausfälle.` : `Gemessen für ${rel.cancelCoverage}.`;
+      box.append(meter("Ausfallrisiko", rel.cancelPct, hint, true));
+    }
     else if (!rel.unavailable) box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
     return box;
   }
@@ -545,7 +549,7 @@
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, last: null, refreshError: "" };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "" };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -553,15 +557,19 @@
 
   // ---- Alter der Daten: "vor 12 s", jede Sekunde neu gezaehlt ----
 
-  const STALE_S = 120; // ab 2 Minuten: Hinweis, dass Verspaetungen laengst anders sein koennen
+  const AUTO_S = 30; // alle 30 s von selbst neu abrufen, solange die Seite sichtbar ist (die GTI-Abrufe sind begrenzt)
   const ageText = (s) => `vor ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`}`;
   const ageSeconds = () => Math.max(0, Math.floor((Date.now() - state.fetchedAt) / 1000));
   function tickAge() {
     const val = document.querySelector(".age-val");
     if (!val || !state.fetchedAt) return;
-    const s = ageSeconds();
-    val.textContent = ageText(s);
-    val.closest(".age").classList.toggle("stale", s >= STALE_S);
+    val.textContent = ageText(ageSeconds());
+  }
+
+  // Automatisch aktualisieren: nur bei sichtbarer Seite, nie parallel und nach einem Fehler erst wieder nach AUTO_S
+  function autoRefresh() {
+    if (!state.data || state.busy || document.visibilityState === "hidden") return;
+    if (Date.now() - Math.max(state.fetchedAt, state.lastTry) >= AUTO_S * 1000) search(true);
   }
 
   function ageRow() {
@@ -645,6 +653,7 @@
   async function search(refresh) {
     if (state.busy) return;
     const again = refresh === true && state.last && state.data;
+    state.lastTry = Date.now();
     const go = $("go");
     state.busy = true;
     go.disabled = true;
@@ -745,8 +754,14 @@
       document.activeElement && document.activeElement.blur && document.activeElement.blur();
       search();
     });
-    setInterval(tickAge, 1000);
-    document.addEventListener("visibilitychange", tickAge); // nach dem Zurueckkehren in den Tab sofort den echten Wert zeigen
+    setInterval(() => {
+      tickAge();
+      autoRefresh();
+    }, 1000);
+    document.addEventListener("visibilitychange", () => {
+      tickAge();
+      autoRefresh(); // zurueck im Tab: sofort neu abrufen, wenn der Stand alt ist
+    });
     getJson("/api/colors").then((c) => Object.assign(COLORS, c)).catch(() => {});
   }
 
