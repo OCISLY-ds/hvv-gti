@@ -252,6 +252,11 @@
       locateBtn && locateBtn.classList.add("busy");
       try {
         const p = await locate();
+        // Adresse zur Position: "Weidenbaumsweg 14, Hamburg" statt "Mein Standort" (Routing nutzt weiter die genaue Koordinate)
+        try {
+          const a = await Promise.race([getJson(`/api/reverse?x=${p.x}&y=${p.y}`), new Promise((_, no) => setTimeout(no, 4000))]);
+          if (a.place && a.place.label) p.label = a.place.label;
+        } catch (e) { /* ohne Adresse bleibt "Mein Standort" */ }
         choose(p);
       } catch (e) {
         input.focus();

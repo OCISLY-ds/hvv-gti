@@ -538,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types, "bus": [l for l in (self.app.feed.bus.lines if self.app.feed.bus else ())]})
-            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route", "/api/alternatives"):
+            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route", "/api/alternatives", "/api/reverse"):
                 return self._planner(path)
             if path == "/api/colors":
                 return self._json(self.app.icons.colors())
@@ -575,6 +575,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not station.match(arg("id")):
                     return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
                 return self._json(planner.departures(arg("id"), min(40, max(1, int(arg("n") or 20)))))
+            if path == "/api/reverse":
+                return self._json({"place": planner.reverse(float(arg("x")), float(arg("y")))})
             if path == "/api/alternatives":
                 if not station.match(arg("station")) or not 0 < len(arg("line")) <= 20 or len(arg("dir")) > 120:
                     return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)

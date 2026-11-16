@@ -47,6 +47,11 @@ CANCEL_MEASUREMENTS = ("hvv_stop_event", "hvv_sweep_event")  # Messpunkte der Li
 WALK_TYPES = {"CHANGE", "FOOTPATH", "BICYCLE"}  # Elemente der GTI-Route, die keine Fahrt sind
 
 
+def is_walk(simple_type: str | None) -> bool:
+    """Fusswege und Umstiege der GTI: CHANGE, FOOTPATH, BICYCLE sowie Varianten wie CHANGE_SAME_PLATFORM (Umstieg am gleichen Bahnsteig)."""
+    return bool(simple_type) and (simple_type in WALK_TYPES or simple_type.startswith(("CHANGE", "FOOT", "BICYCLE")))
+
+
 def line_mode(name: str | None) -> str | None:
     """S, U, X (Xpressbus) oder R (RE/RB); alles andere hat keine Messreihe."""
     if not name:
@@ -410,6 +415,18 @@ class Planner:
             self._places[key] = (time.monotonic(), out)
         return out
 
+    def reverse(self, x: float, y: float) -> dict | None:
+        """Naechstgelegene Adresse zu einer Koordinate (GTI checkName mit Typ COORDINATE); None, wenn sie keine kennt.
+        Die Position geht nur an die GTI, die den Planer ohnehin bedient, an keinen Dritten."""
+        if not (LON_RANGE[0] <= x <= LON_RANGE[1] and LAT_RANGE[0] <= y <= LAT_RANGE[1]):
+            raise ValueError("Koordinate")
+        data = self.client.post("checkName", {"theName": {"name": "", "type": "COORDINATE", "coordinate": {"x": x, "y": y}}, "maxList": 1})
+        for item in data.get("results") or []:
+            name, city = (item.get("name") or "").strip(), (item.get("city") or "").strip()
+            if name:
+                return {"name": name, "city": city, "label": f"{name}, {city}" if city and city not in name else name}
+        return None
+
     def stations(self, query: str, limit: int = 8) -> list[dict]:
         out = []
         for item in self.client.check_name(query, limit * 2):
@@ -613,7 +630,7 @@ def normalize_route(schedule: dict) -> list[dict]:
             "dep": dep,
             "arr": arr,
         }
-        walking = (line.get("type") or {}).get("simpleType") in WALK_TYPES  # Umstiegsfussweg u. a. kommen als "Linie" an
+        walking = is_walk((line.get("type") or {}).get("simpleType"))  # Umstiegsfussweg u. a. kommen als "Linie" an
         if line.get("name") and not walking:
             legs.append(
                 {

@@ -403,6 +403,14 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual(post({"prefix": [], "leg": {"line": "4"}, "planned": 1, "to": "Master:2"}), 400)  # Abschnitt ohne Haltestellen
         self.assertEqual(post({"prefix": [], "leg": {"line": "4", "from": {"id": "Master:1"}, "to": {"id": "Master:2"}}, "planned": 1}), 400)  # ohne Ziel
 
+    def test_reverse_endpoint_returns_the_address_and_rejects_bad_coordinates(self):
+        base, _, _ = self._serve(live=False)
+        status, body = self._get(base, "/api/reverse?x=10.2&y=53.49")
+        self.assertEqual(status, 200)
+        self.assertIn("place", json.loads(body))
+        self.assertEqual(self._get(base, "/api/reverse?x=abc&y=1")[0], 400)
+        self.assertEqual(self._get(base, "/api/reverse?x=0&y=0")[0], 400)
+
     def test_live_map_can_be_switched_on(self):
         base, _, _ = self._serve(live=True)
         self.assertEqual(self._get(base, "/live.html"), (200, "live.html"))

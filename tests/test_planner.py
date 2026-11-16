@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from hvv_gti import planner
-from hvv_gti.planner import Planner, Reliability, TZ, data_mode, flux_str, line_mode, normalize_route, pick_window
+from hvv_gti.planner import Planner, is_walk, Reliability, TZ, data_mode, flux_str, line_mode, normalize_route, pick_window
 
 from .fakes import FakeGti
 from .test_integration import client_for
@@ -402,3 +402,26 @@ class RerouteTests(unittest.TestCase):
             self.assertGreaterEqual(datetime.strptime(asked[1]["time"]["time"], "%H:%M").hour * 60 + datetime.strptime(asked[1]["time"]["time"], "%H:%M").minute, 14 * 60 + 17)  # nach Ankunft 14:15 + 2 min
             with self.assertRaises(LookupError):
                 p.reroute([], first, planned + 3600, {"id": "Master:2", "type": "STATION"}, False)
+
+
+class WalkAndReverseTests(unittest.TestCase):
+    def test_change_on_the_same_platform_is_not_a_ride(self):
+        self.assertTrue(all(is_walk(t) for t in ("CHANGE", "CHANGE_SAME_PLATFORM", "FOOTPATH", "BICYCLE")))
+        self.assertFalse(any(is_walk(t) for t in ("TRAIN", "BUS", None)))
+        schedule = json.loads(json.dumps(SCHEDULE))
+        schedule["scheduleElements"][1]["line"]["type"]["simpleType"] = "CHANGE_SAME_PLATFORM"
+        legs = normalize_route(schedule)
+        self.assertEqual([l.get("line") for l in legs], ["S1", None, "S11"])  # Umstieg ist ein Fussweg, keine Linie "Umstiegsfussweg"
+        self.assertEqual(legs[2]["transfer"]["waitMin"], 5)
+
+    def test_reverse_geocoding_gives_an_address_label(self):
+        found = {"returnCode": "OK", "results": [{"name": "Weidenbaumsweg 14", "city": "Hamburg", "combinedName": "(Nähe) Weidenbaumsweg 14", "type": "COORDINATE"}]}
+        with FakeGti(responses={"checkName": found}) as gti:
+            p = Planner(client_for(gti), Reliability(None))
+            self.assertEqual(p.reverse(10.2057, 53.4895), {"name": "Weidenbaumsweg 14", "city": "Hamburg", "label": "Weidenbaumsweg 14, Hamburg"})
+            sent = [r[1] for r in gti.requests][-1]
+            self.assertEqual(sent["theName"], {"name": "", "type": "COORDINATE", "coordinate": {"x": 10.2057, "y": 53.4895}})
+            with self.assertRaises(ValueError):
+                p.reverse(0.0, 0.0)
+        with FakeGti(responses={"checkName": {"returnCode": "OK", "results": []}}) as gti:
+            self.assertIsNone(Planner(client_for(gti), Reliability(None)).reverse(10.2, 53.5))
