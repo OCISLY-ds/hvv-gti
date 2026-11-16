@@ -43,6 +43,7 @@
     address: svg('<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>'),
     poi: svg('<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>'),
     recent: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+    refresh: svg('<path d="M20 11a8 8 0 0 0-14.5-4.2M4 4.5v3.3h3.3M4 13a8 8 0 0 0 14.5 4.2M20 19.5v-3.3h-3.3"/>'),
     chevron: svg('<path d="M5.5 9l6.5 6.5L18.5 9"/>'),
     walk: svg('<circle cx="13" cy="4.6" r="1.8" fill="currentColor"/><path d="M9.5 21.5l1.7-6.3-2.3-2.2v-4l-1.8 2.2M13 8.5l1.7 3.2 3 .8M11.2 15.2l3.5 1.6.9 4.7M8.9 9.1l3.6-1.4c.4-.1.9.1 1 .5"/>'),
     swapStop: svg('<path d="M7 7h12M7 7l3-3M7 7l3 3M17 17H5m12 0l-3-3m3 3l-3 3"/>'),
@@ -543,11 +544,38 @@
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, last: null, refreshError: "" };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const minTransfer = () => Number($("min").value) || 0;
+
+  // ---- Alter der Daten: "vor 12 s", jede Sekunde neu gezaehlt ----
+
+  const STALE_S = 120; // ab 2 Minuten: Hinweis, dass Verspaetungen laengst anders sein koennen
+  const ageText = (s) => `vor ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`}`;
+  const ageSeconds = () => Math.max(0, Math.floor((Date.now() - state.fetchedAt) / 1000));
+  function tickAge() {
+    const val = document.querySelector(".age-val");
+    if (!val || !state.fetchedAt) return;
+    const s = ageSeconds();
+    val.textContent = ageText(s);
+    val.closest(".age").classList.toggle("stale", s >= STALE_S);
+  }
+
+  function ageRow() {
+    const row = node("div", "age");
+    row.setAttribute("aria-live", "off"); // der Zaehler darf nicht jede Sekunde vorgelesen werden
+    const text = node("span", "age-text");
+    text.append("Echtzeit-Stand: ", node("b", "age-val", ""));
+    const btn = node("button", "refresh");
+    btn.type = "button";
+    btn.append(icon("refresh"), node("span", "", "Aktualisieren"));
+    btn.addEventListener("click", () => search(true));
+    row.append(text, btn);
+    if (state.refreshError) row.append(node("div", "err", state.refreshError));
+    return row;
+  }
 
   function renderResults() {
     const out = $("out");
@@ -559,6 +587,10 @@
       const s = node("div", "summary");
       s.append("Von ", node("b", "", data.from), " nach ", node("b", "", data.to));
       out.append(s);
+    }
+    if (state.fetchedAt) {
+      out.append(ageRow());
+      tickAge();
     }
     if (!data.routes.length) {
       const m = node("div", "msg");
@@ -595,7 +627,7 @@
     if (retry) {
       const b = node("button", "retry", "Erneut versuchen");
       b.type = "button";
-      b.addEventListener("click", search);
+      b.addEventListener("click", () => search());
       m.append(document.createElement("br"), b);
     }
     out.append(m);
@@ -613,8 +645,10 @@
 
   let whenTouched = false;
 
-  async function search() {
+  // refresh = true: dieselbe Suche noch einmal (Start/Ziel/Zeitbezug wie zuletzt), Ergebnisse bleiben sichtbar und aufgeklappt
+  async function search(refresh) {
     if (state.busy) return;
+    const again = refresh === true && state.last && state.data;
     const go = $("go");
     state.busy = true;
     go.disabled = true;
@@ -622,8 +656,27 @@
     if (state.controller) state.controller.abort();
     state.controller = new AbortController();
     const { signal } = state.controller;
-    showSkeleton();
+    if (again) {
+      state.refreshError = "";
+      const btn = document.querySelector(".age .refresh");
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("busy");
+      }
+    } else showSkeleton();
     try {
+      if (again) {
+        const params = new URLSearchParams(state.last.params);
+        if (!whenTouched) {
+          $("when").value = nowLocalInput(); // "Jetzt" bleibt jetzt, auch beim Aktualisieren
+          params.set("when", $("when").value);
+        }
+        const data = await getJson(`/api/route?${params}`, signal);
+        state.data = { ...data, from: state.last.from, to: state.last.to };
+        state.last.params = params.toString();
+        state.fetchedAt = Date.now();
+        return renderResults();
+      }
       const [from, to] = [await resolve(fields.from, signal), await resolve(fields.to, signal)];
       for (const [which, place] of [["from", from], ["to", to]]) {
         if (!place) {
@@ -639,12 +692,20 @@
       params.set("when", $("when").value);
       const data = await getJson(`/api/route?${params}`, signal);
       state.data = { ...data, from: from.label, to: to.label };
+      state.last = { params: params.toString(), from: from.label, to: to.label };
+      state.fetchedAt = Date.now();
+      state.refreshError = "";
       state.open = new Set([0]);
       renderResults();
       if ($("out").getBoundingClientRect().top > innerHeight * 0.55) $("out").scrollIntoView({ block: "start", behavior: "smooth" });
     } catch (e) {
       if (e && e.name === "AbortError") return;
+      if (again) {
+        state.refreshError = `Aktualisieren fehlgeschlagen: ${e.message}`; // alte Ergebnisse bleiben stehen, ihr Alter laeuft weiter
+        return renderResults();
+      }
       state.data = null;
+      state.fetchedAt = 0;
       showMessage("Suche fehlgeschlagen", e.message, true);
     } finally {
       state.busy = false;
@@ -688,6 +749,8 @@
       document.activeElement && document.activeElement.blur && document.activeElement.blur();
       search();
     });
+    setInterval(tickAge, 1000);
+    document.addEventListener("visibilitychange", tickAge); // nach dem Zurueckkehren in den Tab sofort den echten Wert zeigen
     getJson("/api/colors").then((c) => Object.assign(COLORS, c)).catch(() => {});
   }
 
@@ -695,5 +758,5 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
   }
-  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents };
+  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText };
 })(typeof self !== "undefined" ? self : this);
