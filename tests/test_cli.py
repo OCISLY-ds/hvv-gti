@@ -33,10 +33,11 @@ def run_cli(gti: FakeGti, *argv: str, extra_env: dict | None = None) -> tuple[in
         "HVV_GTI_PASSWORD": gti.password,
         "HVV_GTI_BASE_URL": gti.url,
         "HVV_MIN_REQUEST_INTERVAL": "0",
+        "HVV_SWEEP_PER_CYCLE": "0",  # die Ausfall-Erfassung (sweep.py) hat eigene Tests
         **(extra_env or {}),
     }
     out, err = io.StringIO(), io.StringIO()
-    with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=True):
+    with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=True), mock.patch("hvv_gti.config.MIN_REQUEST_INTERVAL", 0.0):  # kein Mindestabstand im Test
         cwd = os.getcwd()
         os.chdir(tmp)  # kein .env aus dem Projektordner
         try:

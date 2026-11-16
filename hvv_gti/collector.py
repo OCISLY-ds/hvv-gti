@@ -229,6 +229,10 @@ def run(
     ferry_denied: set[str] = set()
     bus_denied: set[str] = set()
     announcements_denied: set[str] = set()
+    from .sweep import Sweeper  # erst hier: sweep.py nutzt reason_fields aus diesem Modul
+
+    sweeper = Sweeper()
+    sweep_denied: set[str] = set()
     last_announcements: float | None = None
     usage: list[str] = []  # Anfrageprotokoll, das noch nicht geschrieben ist (auch Fehlversuche zaehlen)
     failures = 0
@@ -243,6 +247,7 @@ def run(
             lines += collect_regional(client, cfg, denied=regional_denied)
             lines += collect_ferry(client, cfg, denied=ferry_denied)
             lines += collect_bus(client, cfg, denied=bus_denied)
+            lines += sweeper.collect(client, cfg, denied=sweep_denied)
             due = last_announcements is None or time.monotonic() - last_announcements >= cfg.announcement_interval
             if cfg.announcement_interval > 0 and due:
                 lines += collect_announcements(client, cfg, denied=announcements_denied)

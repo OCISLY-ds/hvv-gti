@@ -197,6 +197,64 @@ BUS5 = Network(
 
 
 @dataclass(frozen=True)
+class SweepStation:
+    """Knoten, dessen Abfahrtstafel reihum nach Ausfaellen (und Verspaetungen) aller Linien dort abgesucht wird."""
+
+    name: str
+    station_id: str
+    service_types: tuple[str, ...]
+    max_list: int = 120
+
+
+# Ausfall-Erfassung fuer alle RE/RB, U-/S-Bahnen und moeglichst viele Buslinien (Stand 16.11.2026, gemessen: diese Knoten zeigen
+# zusammen rund 190 gleichzeitig verkehrende Buslinien, der Hauptbahnhof allein RE1/4/8/70, RB81 und alle U- und S-Linien).
+# Ein Aufruf je Knoten; die Haltestellen mit den meisten neuen Linien zuerst. Die GTI hat ueber 1400 Buslinien (viele Schul-/Ruf-
+# und Ersatzlinien), alle lassen sich mit Abfahrtstafeln nicht abdecken.
+SWEEP: tuple[SweepStation, ...] = (
+    SweepStation("Hauptbahnhof", "Master:9910950", ("ZUG", "SBAHN", "UBAHN")),
+    SweepStation("Harburg", "Master:49950", ("ZUG",)),
+    SweepStation("Altona", "Master:80953", ("ZUG", "SBAHN")),
+    SweepStation("Bergedorf", "Master:25950", ("ZUG",)),
+    SweepStation("Dammtor", "Master:11951", ("ZUG",)),
+    SweepStation("Elmshorn", "Master:97960", ("ZUG",)),
+    SweepStation("Rathaus", "Master:11905", ("UBAHN",)),
+    SweepStation("Jungfernstieg", "Master:11950", ("UBAHN", "SBAHN")),
+    SweepStation("Berliner Tor", "Master:10952", ("UBAHN",)),
+    SweepStation("Barmbek", "Master:70950", ("UBAHN", "SBAHN")),
+    SweepStation("Bergedorf", "Master:25950", ("BUS",)),
+    SweepStation("Altona", "Master:80953", ("BUS",)),
+    SweepStation("Wandsbek Markt", "Master:60902", ("BUS",)),
+    SweepStation("Stade", "Master:8000089", ("BUS",)),
+    SweepStation("Norderstedt Mitte", "Master:36961", ("BUS",)),
+    SweepStation("Barmbek", "Master:70950", ("BUS",)),
+    SweepStation("Buxtehude", "Master:51989", ("BUS",)),
+    SweepStation("Elmshorn", "Master:97960", ("BUS",)),
+    SweepStation("Ahrensburg", "Master:8000446", ("BUS",)),
+    SweepStation("Poppenbüttel", "Master:71953", ("BUS",)),
+    SweepStation("Wilhelmsburg", "Master:54951", ("BUS",)),
+    SweepStation("Billstedt", "Master:61904", ("BUS",)),
+    SweepStation("Blankenese", "Master:81950", ("BUS",)),
+    SweepStation("Pinneberg", "Master:99951", ("BUS",)),
+    SweepStation("Hauptbahnhof/ZOB", "Master:10002", ("BUS",)),
+    SweepStation("Rahlstedt", "Master:8002558", ("BUS",)),
+    SweepStation("Eidelstedt Zentrum", "Master:83960", ("BUS",)),
+    SweepStation("Neugraben", "Master:41951", ("BUS",)),
+    SweepStation("Veddel", "Master:54950", ("BUS",)),
+    SweepStation("Wedel", "Master:85950", ("BUS",)),
+    SweepStation("Harburg", "Master:49950", ("BUS",)),
+    SweepStation("Finkenwerder", "Master:51980", ("BUS",)),
+    SweepStation("Reinbek", "Master:25951", ("BUS",)),
+    SweepStation("Langenhorn Markt", "Master:92903", ("BUS",)),
+    SweepStation("Mümmelmannsberg", "Master:22902", ("BUS",)),
+)
+
+# Obergrenze fuer GTI-Aufrufe: nie mehr als 0,8 pro Sekunde (die GTI sperrt ab etwa 1/s). Der Client haelt den Mindestabstand ein,
+# `from_env` erlaubt keinen kleineren Wert.
+MAX_REQUESTS_PER_SECOND = 0.8
+MIN_REQUEST_INTERVAL = 1 / MAX_REQUESTS_PER_SECOND + 0.01
+
+
+@dataclass(frozen=True)
 class Config:
     gti_user: str = ""
     gti_password: str = field(default="", repr=False)
@@ -211,6 +269,9 @@ class Config:
     ferry: Network | None = FERRY
     bus: Network | None = BUS5
     poll_interval: float = 60.0
+    sweep: tuple[SweepStation, ...] = SWEEP
+    # Knoten je Zyklus (reihum); 0 schaltet die Ausfall-Erfassung ab. 12 Aufrufe mehr je Zyklus: Gesamtrate ca. 0,2 Aufrufe/s.
+    sweep_per_cycle: int = 12
     # Stoerungsmeldungen aendern sich selten und die Antwort ist gross (~75 KB); 0 schaltet sie ab.
     announcement_interval: float = 300.0
     max_time_offset: int = 30
@@ -231,7 +292,8 @@ class Config:
             gti_password=e.get("HVV_GTI_PASSWORD", d.gti_password),
             gti_base_url=e.get("HVV_GTI_BASE_URL", d.gti_base_url).rstrip("/"),
             api_version=int(e.get("HVV_API_VERSION", d.api_version)),
-            min_request_interval=float(e.get("HVV_MIN_REQUEST_INTERVAL", d.min_request_interval)),
+            min_request_interval=max(float(e.get("HVV_MIN_REQUEST_INTERVAL", d.min_request_interval)), MIN_REQUEST_INTERVAL),
+            sweep_per_cycle=int(e.get("HVV_SWEEP_PER_CYCLE", d.sweep_per_cycle)),
             poll_interval=float(e.get("HVV_POLL_INTERVAL", d.poll_interval)),
             announcement_interval=float(e.get("HVV_ANNOUNCEMENT_INTERVAL", d.announcement_interval)),
             max_time_offset=int(e.get("HVV_MAX_TIME_OFFSET", d.max_time_offset)),

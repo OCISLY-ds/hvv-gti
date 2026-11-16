@@ -35,15 +35,15 @@ CACHE_S = 600
 
 # Messung je Linienart (hvv_stop_event zusaetzlich fuer Ausfaelle)
 # Busse (B): Bus 5 hat Halt fuer Halt Messwerte (hvv_bus_stop); alle anderen Buslinien (4, 234, ...) kennt nur die Abfahrtstafel
-# ihres Erfassungs-Halts (hvv_stop_event), dort gelten die Werte dann fuer die ganze Linie.
+# ihres Erfassungs-Halts (hvv_stop_event, hvv_sweep_event), dort gelten die Werte dann fuer die ganze Linie.
 MEASUREMENTS = {
     "S": ("hvv_network_stop",),
     "U": ("hvv_network_stop",),
     "X": ("hvv_xbus_stop",),
     "R": ("hvv_regional_stop",),
-    "B": ("hvv_bus_stop", "hvv_stop_event"),
+    "B": ("hvv_bus_stop", "hvv_stop_event", "hvv_sweep_event"),
 }
-CANCEL_MEASUREMENT = "hvv_stop_event"
+CANCEL_MEASUREMENTS = ("hvv_stop_event", "hvv_sweep_event")  # Messpunkte der Linien bzw. Ausfall-Erfassung ueber viele Knoten (sweep.py)
 WALK_TYPES = {"CHANGE", "FOOTPATH", "BICYCLE"}  # Elemente der GTI-Route, die keine Fahrt sind
 
 
@@ -122,9 +122,10 @@ class InfluxReader:
         return out
 
     def cancel_rate(self, line: str) -> tuple[int, float] | None:
+        measurements = " or ".join(f'r._measurement == "{m}"' for m in CANCEL_MEASUREMENTS)
         flux = (
             f'from(bucket: {flux_str(self.bucket)}) |> range(start: {LOOKBACK}) '
-            f'|> filter(fn: (r) => r._measurement == "{CANCEL_MEASUREMENT}" and r._field == "cancelled" and r.line == {flux_str(line)}) '
+            f'|> filter(fn: (r) => ({measurements}) and r._field == "cancelled" and r.line == {flux_str(line)}) '
             '|> keep(columns: ["_value"]) |> limit(n: 20000)'
         )
         values = [row["_value"].strip().lower() in ("1", "true") for row in self.query(flux) if "_value" in row]
