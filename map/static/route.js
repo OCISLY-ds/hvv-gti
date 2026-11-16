@@ -655,7 +655,12 @@
 
   const ALT_TTL = 20000;
   const altCache = new Map(); // Schluessel -> { at, list, pending }
-  const routeKey = (r) => `${r.plannedDep}|${r.legs.filter((l) => l.line).map((l) => l.line).join(",")}`;
+  // Schluessel einer Verbindung: Plan-Abfahrt der ERSTEN FAHRT und die Linien. Die Startzeit der ganzen Verbindung taugt nicht: Beginnt sie mit
+  // einem Fussweg (Adresse, Standort), rechnet die GTI sie bei jeder Abfrage neu, und die gemerkte Reise wuerde nie wiedergefunden.
+  const routeKey = (r) => {
+    const rides = r.legs.filter((l) => l.line);
+    return `${rides.length ? rides[0].dep : r.plannedDep}|${rides.map((l) => l.line).join(",")}`;
+  };
   const minutesFromNow = (real) => Math.max(0, Math.round((real * 1000 - Date.now()) / 60000));
   const joinDe = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} und ${items[items.length - 1]}`);
 
@@ -895,7 +900,9 @@
   function loadSaved() {
     try {
       const v = JSON.parse(store.get(SAVED_KEY) || "null");
-      return v && v.key && v.from && v.to && v.snapshot && Array.isArray(v.picks) ? v : null;
+      if (!(v && v.key && v.from && v.to && v.snapshot && Array.isArray(v.picks))) return null;
+      if (v.v !== 2) v.key = routeKey(v.snapshot); // alter Schluessel (Startzeit der Verbindung) passt nicht mehr
+      return v;
     } catch (e) {
       return null;
     }
@@ -905,7 +912,7 @@
   function saveRoute(ri) {
     const r = state.data.routes[ri];
     state.saved = {
-      v: 1,
+      v: 2,
       key: r.key,
       from: state.last.fromPlace,
       to: state.last.toPlace,
@@ -1318,5 +1325,5 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
   }
-  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText, dur, findProblem, tripStatus, reasonText, state };
+  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText, dur, findProblem, tripStatus, reasonText, state, routeKey };
 })(typeof self !== "undefined" ? self : this);

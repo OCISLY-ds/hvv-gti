@@ -122,3 +122,12 @@ test("the trip status follows the journey and warns about problems", () => {
   assert.ok(worse.lines.some((l) => /Seit dem Merken: Ankunft 6 min später/.test(l)));
   R.state.saved = null;
 });
+
+test("a saved trip is found again although the walk to the first stop starts at another time", () => {
+  const walk = (start) => ({ line: null, from: { name: null }, to: { name: "A" }, dep: T0 + start * 60, arr: T0 + 5 * 60 });
+  const ride = leg("S5", "A", "B", 5, 40);
+  const first = { plannedDep: T0 + 1 * 60, legs: [walk(1), ride] };
+  const later = { plannedDep: T0 + 3 * 60, legs: [walk(3), ride] };  // GTI rechnet den Start des Fussweges je Abfrage neu
+  assert.equal(R.routeKey(first), R.routeKey(later));
+  assert.notEqual(R.routeKey(first), R.routeKey({ plannedDep: first.plannedDep, legs: [walk(1), leg("S5", "A", "B", 25, 60)] })); // andere Abfahrt = andere Verbindung
+});
