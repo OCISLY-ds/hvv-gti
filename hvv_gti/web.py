@@ -41,6 +41,7 @@ SEED_SIGNALS = Path(__file__).resolve().parent.parent / "map" / "seed" / "signal
 KX_M = math.cos(math.radians(53.55)) * 111320  # Meter je Grad Laenge/Breite bei Hamburg
 KY_M = 110540
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
+MAX_POST_BYTES = 200_000  # /api/reroute bekommt die Abschnitte der Verbindung (ein paar KB)
 LIVE_PATHS = ("/api/vehicles", "/api/journey", "/api/tracks", "/api/config")  # nur mit eingeschalteter Live-Karte
 LIVE_FILES = ("live.html", "app.js", "motion.js")
 REGIONAL_LINE = re.compile(r"^R[EB]\d")  # von den Regionalzuegen (R_BAHN) werden alle RE- und RB-Linien angezeigt
@@ -484,6 +485,27 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def do_POST(self):
+        path = unquote(urlsplit(self.path).path)
+        if path != "/api/reroute":
+            return self._json({"error": "nicht gefunden"}, HTTPStatus.NOT_FOUND)
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+            if not 0 < size <= MAX_POST_BYTES:
+                return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
+            body = json.loads(self.rfile.read(size))
+            if not isinstance(body, dict):
+                raise ValueError
+        except (ValueError, UnicodeDecodeError):
+            return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
+        try:
+            self._planner(path, body)
+        except GtiAuthError as exc:
+            log.error("GTI-Zugang abgelehnt: %s", exc)
+            self._json({"error": "GTI-Zugang abgelehnt"}, HTTPStatus.BAD_GATEWAY)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
         try:
@@ -516,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types, "bus": [l for l in (self.app.feed.bus.lines if self.app.feed.bus else ())]})
-            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route"):
+            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route", "/api/alternatives"):
                 return self._planner(path)
             if path == "/api/colors":
                 return self._json(self.app.icons.colors())
@@ -533,7 +555,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def _planner(self, path: str) -> None:
+    def _planner(self, path: str, body: dict | None = None) -> None:
         planner = self.app.planner
         if planner is None:
             return self._json({"error": "Routenplaner nicht verfuegbar"}, HTTPStatus.NOT_FOUND)
@@ -553,12 +575,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not station.match(arg("id")):
                     return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
                 return self._json(planner.departures(arg("id"), min(40, max(1, int(arg("n") or 20)))))
+            if path == "/api/alternatives":
+                if not station.match(arg("station")) or not 0 < len(arg("line")) <= 20 or len(arg("dir")) > 120:
+                    return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
+                return self._json(planner.alternatives(arg("station"), arg("line"), arg("dir"), float(arg("after") or time.time()), min(8, max(1, int(arg("n") or 5)))))
+            if path == "/api/reroute":
+                return self._reroute(planner, body or {})
             start, dest = parse_place(arg("from")), parse_place(arg("to"))  # Haltestellen-ID oder Adresse/Standort als JSON
             when = datetime.now(ZoneInfo("Europe/Berlin"))
             if arg("when"):
                 when = datetime.fromisoformat(arg("when")).replace(tzinfo=ZoneInfo("Europe/Berlin"))
             return self._json(planner.route(start, dest, when, arg("arrive") == "1"))
-        except ValueError:
+        except (ValueError, KeyError, TypeError, AttributeError, IndexError):
             return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
         except GtiAuthError:
             raise
@@ -568,6 +596,19 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as exc:
             log.error("Planer (Influx): %s", exc)
             return self._json({"error": "Messdaten derzeit nicht erreichbar"}, HTTPStatus.BAD_GATEWAY)
+
+    def _reroute(self, planner, body: dict) -> None:
+        """Verbindung mit einer anderen Abfahrt eines Fahrtabschnitts: {prefix, leg, planned, to, tail} -> {route}."""
+        prefix, leg = body.get("prefix"), body.get("leg")
+        if not isinstance(prefix, list) or len(prefix) > 12 or not all(isinstance(item, dict) for item in prefix) or not isinstance(leg, dict):
+            raise ValueError("Abschnitte")
+        planned = float(body["planned"])
+        dest = parse_place(str(body.get("to") or ""))
+        try:
+            route = planner.reroute(prefix, leg, planned, dest, bool(body.get("tail")))
+        except LookupError as exc:
+            return self._json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
+        return self._json({"route": route})
 
     def _icon(self, filename: str) -> None:
         name, _, fmt = filename.rpartition(".")

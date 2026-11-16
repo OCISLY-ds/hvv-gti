@@ -380,6 +380,29 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual(json.loads(body)["places"][0]["type"], "ADDRESS")
         self.assertEqual([path for path, _, _ in gti.requests if "getVehicleMap" in path], [])
 
+    def test_alternatives_and_reroute_endpoints_validate_their_input(self):
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        base, gti, _ = self._serve(live=False)
+        status, body = self._get(base, "/api/alternatives?" + urllib.parse.urlencode({"station": "Master:1", "line": "4", "dir": "Osakaallee"}))
+        self.assertEqual((status, json.loads(body)["alternatives"]), (200, []))
+        self.assertEqual(self._get(base, "/api/alternatives?" + urllib.parse.urlencode({"station": "x y", "line": "4"}))[0], 400)
+
+        def post(payload, raw=None):
+            req = urllib.request.Request(base + "/api/reroute", data=raw if raw is not None else json.dumps(payload).encode(), method="POST", headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status
+            except urllib.error.HTTPError as exc:
+                return exc.code
+
+        self.assertEqual(post(None, raw=b"nope"), 400)
+        self.assertEqual(post({"prefix": "x", "leg": {}, "planned": 1, "to": "Master:2"}), 400)
+        self.assertEqual(post({"prefix": [], "leg": {"line": "4"}, "planned": 1, "to": "Master:2"}), 400)  # Abschnitt ohne Haltestellen
+        self.assertEqual(post({"prefix": [], "leg": {"line": "4", "from": {"id": "Master:1"}, "to": {"id": "Master:2"}}, "planned": 1}), 400)  # ohne Ziel
+
     def test_live_map_can_be_switched_on(self):
         base, _, _ = self._serve(live=True)
         self.assertEqual(self._get(base, "/live.html"), (200, "live.html"))

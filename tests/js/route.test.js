@@ -58,3 +58,15 @@ test("the Hamburg band and bow are part of the page and carry no text", () => {
   const html = fs.readFileSync(path.join(__dirname, "../../map/static/index.html"), "utf8");
   assert.match(html, /<div class="band" aria-hidden="true"><span class="bow"><\/span><\/div>/);
 });
+
+test("every transport mode has an icon the planner can draw", () => {
+  const js = fs.readFileSync(path.join(__dirname, "../../map/static/route.js"), "utf8");
+  for (const icon of ["bus", "sbahn", "ubahn", "train", "ship"]) assert.match(js, new RegExp(`\\n    ${icon}: svg\\(`), icon);
+  assert.match(js, /const MODES = \{ B: \["bus", "Bus"\], X: \["bus", "XpressBus"\], S: \["sbahn", "S-Bahn"\], U: \["ubahn", "U-Bahn"\], R: \["train", "Regionalzug"\]/);
+});
+
+test("line badges keep their aspect ratio", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../../map/static/route.css"), "utf8");
+  assert.match(css, /\.rt-logo \.lb img \{[^}]*width: auto; max-width: none/);
+  assert.match(css, /\.lb img \{[^}]*width: auto; max-width: none/);
+});

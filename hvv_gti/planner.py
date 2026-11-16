@@ -457,8 +457,7 @@ class Planner:
             self._departures[key] = (time.monotonic(), data)
         return data
 
-    def route(self, start: str | dict, dest: str | dict, when: datetime, arrive: bool = False, count: int = 3) -> dict:
-        """`start`/`dest`: Haltestellen-ID oder Ort (`parse_place`)."""
+    def _schedules(self, start: str | dict, dest: str | dict, when: datetime, arrive: bool = False, count: int = 3) -> tuple[dict, list[dict]]:
         local = when.astimezone(TZ)
         as_place = lambda p: {"id": p, "type": "STATION"} if isinstance(p, str) else p
         response = self.client.post(
@@ -474,7 +473,12 @@ class Planner:
                 "intermediateStops": True,
             },
         )
-        schedules = response.get("realtimeSchedules") or response.get("schedules") or []
+        return response, response.get("realtimeSchedules") or response.get("schedules") or []
+
+    def route(self, start: str | dict, dest: str | dict, when: datetime, arrive: bool = False, count: int = 3) -> dict:
+        """`start`/`dest`: Haltestellen-ID oder Ort (`parse_place`)."""
+        local = when.astimezone(TZ)
+        response, schedules = self._schedules(start, dest, when, arrive, count)
         routes = []
         for schedule in schedules[:count]:
             legs = normalize_route(schedule)
@@ -504,6 +508,97 @@ class Planner:
                 }
             )
         return {"routes": routes, "returnCode": response.get("returnCode")}
+
+    # ---- Andere Abfahrt derselben Linie waehlen ("Auch in 28 min und 48 min") ----
+
+    def board(self, station_id: str) -> list[dict]:
+        """Abfahrtstafel der naechsten 2 Stunden mit allen Linien, 20 s lang gemerkt (mehrere Fahrtabschnitte teilen sich eine Tafel)."""
+        key = f"board|{station_id}"
+        with self._lock:
+            hit = self._departures.get(key)
+            if hit and time.monotonic() - hit[0] < 20:
+                return hit[1]["list"]
+        reference = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        response = self.client.departure_list({"id": station_id, "type": "STATION"}, reference, max_list=150, max_time_offset=120, departure=True)
+        out = []
+        for dep in response.get("departures", []):
+            line = dep.get("line") or {}
+            delay = dep.get("delay")
+            out.append(
+                {
+                    "line": line.get("name") or "?",
+                    "direction": line.get("direction") or "",
+                    "planned": reference.timestamp() + int(dep.get("timeOffset", 0)) * 60,
+                    "delayMin": None if delay is None else round(delay / 60),
+                    "cancelled": bool(dep.get("cancelled")),
+                    "platform": (dep.get("stopPoint") or {}).get("name") or "",
+                }
+            )
+        with self._lock:
+            if len(self._departures) >= PLACE_CACHE_MAX:
+                self._departures.clear()
+            self._departures[key] = (time.monotonic(), {"list": out})
+        return out
+
+    def alternatives(self, station_id: str, line: str, direction: str, not_before: float, limit: int = 5) -> dict:
+        """Weitere Abfahrten derselben Linie in dieselbe Richtung ab `not_before` (Epoche, nach Echtzeit), ohne Ausfaelle."""
+        found = []
+        for dep in self.board(station_id):
+            real = dep["planned"] + (dep["delayMin"] or 0) * 60
+            if dep["line"] == line and dep["direction"] == direction and not dep["cancelled"] and real >= not_before - 30:
+                found.append({**dep, "real": real})
+        found.sort(key=lambda d: d["real"])
+        return {"now": time.time(), "alternatives": found[:limit]}
+
+    def reroute(self, prefix: list[dict], leg: dict, planned: float, dest: str | dict, tail: bool) -> dict:
+        """Verbindung mit einer anderen Abfahrt des Fahrtabschnitts `leg`: `prefix` (Abschnitte davor) bleibt, die Fahrt wird durch die
+        Abfahrt `planned` (Plan-Epoche) ersetzt und der Rest bis `dest` neu gesucht (nur wenn nach `leg` noch etwas kommt: `tail`)."""
+        start_id, end_id = (leg.get("from") or {}).get("id"), (leg.get("to") or {}).get("id")
+        if not start_id or not end_id or not leg.get("line"):
+            raise ValueError("ungueltiger Abschnitt")
+        _, schedules = self._schedules(start_id, end_id, datetime.fromtimestamp(planned - 60, TZ), False, 4)
+        ride = None
+        for schedule in schedules:
+            for candidate in normalize_route(schedule):
+                if candidate.get("line") == leg["line"] and candidate.get("dep") is not None and abs(candidate["dep"] - planned) <= 90:
+                    ride = candidate
+                    break
+            if ride:
+                break
+        if ride is None:
+            raise LookupError("Diese Abfahrt ist nicht mehr verfügbar.")
+        legs = [*prefix, ride]
+        if tail:
+            arrival = (ride.get("arr") or planned) + (ride.get("arrDelayMin") or 0) * 60 + 120  # 2 min zum Aussteigen und Umsteigen
+            _, onward = self._schedules(end_id, dest, datetime.fromtimestamp(arrival, TZ), False, 1)
+            if not onward:
+                raise LookupError("Für diese Abfahrt gibt es keine Weiterfahrt.")
+            legs += normalize_route(onward[0])
+        for item in legs:
+            item.pop("transfer", None)
+            item.pop("stats", None)
+        annotate_transfers(legs)
+        first, last = legs[0], legs[-1]
+        rides = [item for item in legs if item.get("line")]
+        planned_dep, planned_arr = first["dep"], last["arr"]
+        real_dep = planned_dep + ((first.get("depDelayMin") or 0) * 60 if first.get("line") else 0)
+        real_arr = planned_arr + (((rides[-1].get("arrDelayMin") or 0) * 60) if rides else 0)
+        try:
+            assessed = self.reliability.assess(legs, datetime.fromtimestamp(planned_dep, TZ))
+        except OSError as exc:
+            log.warning("Zuverlaessigkeit nicht berechnet: %s", exc)
+            assessed = {"legsWithData": 0, "legs": len(rides), "unavailable": True}
+        return {
+            "plannedDep": planned_dep,
+            "plannedArr": planned_arr,
+            "realDep": real_dep,
+            "realArr": real_arr,
+            "minutes": round((real_arr - real_dep) / 60),
+            "footpathMin": None,
+            "tickets": [],
+            "legs": legs,
+            "reliability": assessed,
+        }
 
 
 def normalize_route(schedule: dict) -> list[dict]:

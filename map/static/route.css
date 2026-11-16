@@ -295,8 +295,29 @@ button { cursor: pointer; }
 .rt-logo { position: relative; z-index: 1; display: inline-flex; padding: 3px 0; background: var(--surface); }
 .rt-logo .lb img { height: 20px; width: auto; max-width: none; }
 .rt-logo .lb-t { font-size: 11px; padding: 1px 4px; }
-.dir { display: inline-flex; max-width: 100%; align-items: center; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 14px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.dir { display: inline-flex; gap: 8px; max-width: 100%; align-items: center; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 14px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .dir.gone { text-decoration: line-through; color: var(--mute); }
+/* Verkehrsmittel-Symbol (Bus, S-Bahn, U-Bahn, Regionalzug, Faehre), Farbe der Linie */
+.mode { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; }
+.mode svg { width: 100%; height: 100%; display: block; }
+.trip-mid .mode { width: 22px; height: 22px; margin-right: -2px; }
+.dir .mode { width: 22px; height: 22px; }
+
+/* Andere Abfahrt derselben Linie ("Auch in 28 min und 48 min") */
+.alts { margin-top: 2px; }
+.alts-toggle { margin-top: 0; color: var(--ink); font-weight: 600; }
+.alt-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 2px 0 8px; }
+.alt-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; min-height: var(--tap); padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--surface); text-align: left; }
+.alt-item:active { background: var(--sunken); }
+.alt-item:disabled { opacity: 0.6; cursor: progress; }
+.alt-t { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.alt-m { color: var(--mute); font-size: 13px; }
+.alt-go { color: var(--primary); font-size: 14px; font-weight: 700; }
+.custom-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--sunken); color: var(--mute); font-size: 13px; }
+.custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-weight: 700; text-decoration: underline; }
+.pill.custom { background: color-mix(in srgb, var(--glow) 28%, var(--surface)); color: var(--ink); }
+.note.err { background: var(--bad-bg); color: var(--bad); }
+
 .warn { margin-top: 6px; color: var(--bad); font-weight: 600; font-size: 14px; }
 .more { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--mute); font-size: 14px; text-align: left; }
 div.more { cursor: default; }

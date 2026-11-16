@@ -343,3 +343,61 @@ class PlaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlternativesTests(unittest.TestCase):
+    def test_other_departures_of_the_same_line_and_direction(self):
+        def dep(line, direction, offset, **extra):
+            return {"line": {"name": line, "direction": direction}, "timeOffset": offset, **extra}
+
+        responses = {"departureList": {"returnCode": "OK", "departures": [
+            dep("4", "Osakaallee", 4), dep("4", "Osakaallee", 24, delay=120), dep("4", "Osakaallee", 44, cancelled=True),
+            dep("4", "Eidelstedt", 10), dep("5", "Osakaallee", 12), dep("4", "Osakaallee", 64),
+        ]}}
+        with FakeGti(responses=responses) as gti:
+            p = Planner(client_for(gti), Reliability(None))
+            now = datetime.now(TZ).timestamp()
+            found = p.alternatives("Master:11021", "4", "Osakaallee", now + 10 * 60)["alternatives"]
+            self.assertEqual([round((a["real"] - now) / 60) for a in found], [26, 64])  # 4 min liegt vor dem fruehesten Zeitpunkt, 44 faellt aus
+            self.assertEqual(found[0]["delayMin"], 2)
+            p.alternatives("Master:11021", "4", "Osakaallee", now)
+            self.assertEqual(len([r for r in gti.requests if r[0].endswith("departureList")]), 1)  # Tafel wird kurz gemerkt
+
+
+class RerouteTests(unittest.TestCase):
+    NEXT = {
+        "plannedDepartureTime": "2026-11-07T14:10:00.000+0100",
+        "plannedArrivalTime": "2026-11-07T14:50:00.000+0100",
+        "scheduleElements": [
+            {
+                "from": {"name": "Altona", "id": "Master:1", "depTime": {"date": "07.11.2026", "time": "14:10"}},
+                "to": {"name": "Flughafen", "id": "Master:2", "arrTime": {"date": "07.11.2026", "time": "14:50"}, "arrDelay": 60},
+                "line": {"name": "S11", "direction": "Flughafen", "type": {"simpleType": "TRAIN"}},
+            }
+        ],
+    }
+
+    def test_later_departure_replaces_the_ride_and_searches_the_rest_again(self):
+        first = normalize_route(SCHEDULE)[0]  # S1 Wedel -> Altona, 13:23
+        later = json.loads(json.dumps(SCHEDULE["scheduleElements"][0]))
+        later["from"]["depTime"]["time"], later["to"]["arrTime"]["time"] = "13:43", "14:15"
+        ride_schedule = {"scheduleElements": [later], "plannedDepartureTime": "2026-11-07T13:43:00.000+0100"}
+
+        def get_route(body):
+            if body["start"]["id"] == "Master:85950":
+                return {"returnCode": "OK", "realtimeSchedules": [ride_schedule]}
+            return {"returnCode": "OK", "realtimeSchedules": [self.NEXT]}
+
+        with FakeGti(responses={"getRoute": get_route}) as gti:
+            p = Planner(client_for(gti), Reliability(None))
+            planned = datetime(2026, 11, 7, 13, 43, tzinfo=TZ).timestamp()
+            route = p.reroute([], first, planned, {"id": "Master:2", "type": "STATION"}, True)
+            self.assertEqual([l["line"] for l in route["legs"]], ["S1", "S11"])
+            self.assertEqual(route["plannedDep"], planned)
+            self.assertEqual(route["legs"][1]["transfer"]["station"], "Altona")  # Umstieg wurde neu berechnet
+            self.assertEqual(route["realArr"], route["plannedArr"] + 60)
+            asked = [r[1] for r in gti.requests if r[0].endswith("getRoute")]
+            self.assertEqual([a["start"]["id"] for a in asked], ["Master:85950", "Master:1"])
+            self.assertGreaterEqual(datetime.strptime(asked[1]["time"]["time"], "%H:%M").hour * 60 + datetime.strptime(asked[1]["time"]["time"], "%H:%M").minute, 14 * 60 + 17)  # nach Ankunft 14:15 + 2 min
+            with self.assertRaises(LookupError):
+                p.reroute([], first, planned + 3600, {"id": "Master:2", "type": "STATION"}, False)

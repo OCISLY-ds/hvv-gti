@@ -32,6 +32,18 @@
     return data;
   }
 
+  async function postJson(url, body) {
+    let response;
+    try {
+      response = await fetch(url, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    } catch (e) {
+      throw new Error("Keine Verbindung zum Server. Bitte Netz prüfen und erneut versuchen.");
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Fehler ${response.status}`);
+    return data;
+  }
+
   // ---- Symbole (feste Zeichenketten, keine Daten) ----
 
   const svg = (inner, fill) => `<svg viewBox="0 0 24 24" fill="${fill || "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${inner}</svg>`;
@@ -43,6 +55,11 @@
     address: svg('<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>'),
     poi: svg('<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>'),
     recent: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+    bus: svg('<rect x="4.5" y="3.5" width="15" height="14" rx="3"/><path d="M4.5 10.5h15M7.5 20.5v-3M16.5 20.5v-3"/><circle cx="8.3" cy="14" r=".9" fill="currentColor" stroke="none"/><circle cx="15.7" cy="14" r=".9" fill="currentColor" stroke="none"/>'),
+    sbahn: svg('<circle cx="12" cy="12" r="8.6"/><path d="M15.2 9.3c-.6-1-1.7-1.5-3.1-1.5-1.7 0-2.8.8-2.8 2 0 3.1 6 1.4 6 4.4 0 1.3-1.3 2.1-3 2.1-1.4 0-2.5-.5-3.2-1.6"/>'),
+    ubahn: svg('<rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3.8"/><path d="M8.6 7.8v5.2a3.4 3.4 0 0 0 6.8 0V7.8"/>'),
+    train: svg('<path d="M9.5 2.8h5M12 2.8v2"/><rect x="5.5" y="4.8" width="13" height="12.7" rx="3"/><path d="M5.5 11.2h13M8.3 21l1.6-3.5M15.7 21l-1.6-3.5"/><circle cx="9" cy="14.3" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="14.3" r=".8" fill="currentColor" stroke="none"/>'),
+    ship: svg('<path d="M4 15.5l1.8 3.7h12.4l1.8-3.7zM7.5 15V9.5h9V15M12 9.5V5.5M9.5 5.5h5"/>'),
     refresh: svg('<path d="M20 11a8 8 0 0 0-14.5-4.2M4 4.5v3.3h3.3M4 13a8 8 0 0 0 14.5 4.2M20 19.5v-3.3h-3.3"/>'),
     chevron: svg('<path d="M5.5 9l6.5 6.5L18.5 9"/>'),
     walk: svg('<circle cx="13" cy="4.6" r="1.8" fill="currentColor"/><path d="M9.5 21.5l1.7-6.3-2.3-2.2v-4l-1.8 2.2M13 8.5l1.7 3.2 3 .8M11.2 15.2l3.5 1.6.9 4.7M8.9 9.1l3.6-1.4c.4-.1.9.1 1 .5"/>'),
@@ -55,6 +72,18 @@
     n.innerHTML = ICONS[name];
     return n;
   };
+  // Verkehrsmittel: Bus, S-Bahn, U-Bahn, Regionalzug, Faehre (mode kommt vom Server: B, X, S, U, R, Z, F)
+  const MODES = { B: ["bus", "Bus"], X: ["bus", "XpressBus"], S: ["sbahn", "S-Bahn"], U: ["ubahn", "U-Bahn"], R: ["train", "Regionalzug"], Z: ["train", "Zug"], F: ["ship", "Fähre"] };
+  const modeOf = (leg) => MODES[leg.mode] || (/^\d/.test(leg.line || "") ? MODES.B : MODES.Z);
+  function modeIcon(leg) {
+    const [name, label] = modeOf(leg);
+    const n = icon(name, "mode");
+    n.setAttribute("role", "img");
+    n.setAttribute("aria-label", label);
+    n.title = label;
+    n.style.color = lineColor(leg);
+    return n;
+  }
   const KIND = { STATION: ["station", "Haltestelle"], ADDRESS: ["address", "Adresse"], POI: ["poi", "Ort"] };
 
   // ---- Linien: Farbe und Schild ----
@@ -360,7 +389,7 @@
     return row;
   }
 
-  function rideCard(leg) {
+  function rideCard(leg, legIndex, ctx) {
     const card = node("div", "leg");
     card.style.setProperty("--c", lineColor(leg));
     card.append(stopRow("dep", leg.dep, leg.depDelayMin, leg.from.name, leg.from.platform, leg.cancelled));
@@ -371,8 +400,15 @@
     logo.append(badge(leg.line, leg.mode));
     rail.append(logo);
     const body = node("div", "body");
-    const dir = node("div", "dir" + (leg.cancelled ? " gone" : ""), `Richtung ${leg.direction || "–"}`);
+    const dir = node("div", "dir" + (leg.cancelled ? " gone" : ""));
+    dir.append(modeIcon(leg), node("span", "", `Richtung ${leg.direction || "–"}`));
     body.append(dir);
+    if (ctx && leg.from.id && !leg.cancelled) {
+      const alts = node("div", "alts");
+      alts.hidden = true;
+      body.append(alts);
+      ctx.alts.push({ el: alts, leg, index: legIndex });
+    }
     if (leg.cancelled) body.append(node("div", "warn", "Diese Fahrt fällt aus."));
 
     const details = node("div", "details");
@@ -507,7 +543,7 @@
     const steps = r.legs.filter((leg, i) => leg.line || i === 0 || i === r.legs.length - 1);
     steps.forEach((leg) => {
       if (mid.childElementCount) mid.append(node("span", "sep", "›"));
-      if (leg.line) mid.append(badge(leg.line, leg.mode));
+      if (leg.line) mid.append(modeIcon(leg), badge(leg.line, leg.mode));
       else {
         const w = node("span", "walk-chip");
         w.append(icon("walk"), document.createTextNode(`${leg.walkMin} min`));
@@ -524,12 +560,23 @@
     if (by.ontimePct !== undefined) foot.append(node("span", "pill " + tone(by.ontimePct), `${pct(by.ontimePct)} pünktlich`));
     if (rel.cancelPct !== undefined && rel.cancelPct >= 1) foot.append(node("span", "pill " + (rel.cancelPct >= 5 ? "bad" : "mid"), `Ausfall ${pct(rel.cancelPct)}`));
     if (r.realArr && r.plannedArr && Math.round((r.realArr - r.plannedArr) / 60) >= 1) foot.append(node("span", "pill late1", `Ankunft +${Math.round((r.realArr - r.plannedArr) / 60)} min`));
+    if (r.custom) foot.append(node("span", "pill custom", "Eigene Abfahrt"));
     head.append(foot);
     return head;
   }
 
-  function tripBody(r, minTransfer) {
+  function tripBody(r, minTransfer, ctx) {
     const body = node("div", "trip-body");
+    if (r.custom) {
+      const note = node("div", "custom-note");
+      note.append(node("span", "", "Du hast eine andere Abfahrt gewählt, der Rest der Route wurde neu berechnet."));
+      const undo = node("button", "link", "Zurücksetzen");
+      undo.type = "button";
+      undo.addEventListener("click", () => resetRoute(ctx.ri));
+      note.append(undo);
+      body.append(note);
+    }
+    if (state.altError && state.altError.ri === ctx.ri) body.append(node("div", "note err", state.altError.text));
     const line = node("div", "line");
     let prev = null;
     r.legs.forEach((leg, i) => {
@@ -540,20 +587,165 @@
         return;
       }
       if (leg.transfer) line.append(transferRow(leg.transfer, prev, leg, minTransfer));
-      line.append(rideCard(leg));
+      line.append(rideCard(leg, i, ctx));
       prev = leg;
     });
     body.append(line, reliabilityBox(r.reliability || {}, minTransfer));
+    body._alts = ctx.alts;
     return body;
   }
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "" };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), altError: null, rerouting: false };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const minTransfer = () => Number($("min").value) || 0;
+
+  // ---- Andere Abfahrt derselben Linie ("Auch in 28 min und 48 min") ----
+
+  const ALT_TTL = 20000;
+  const altCache = new Map(); // Schluessel -> { at, list, pending }
+  const routeKey = (r) => `${r.plannedDep}|${r.legs.filter((l) => l.line).map((l) => l.line).join(",")}`;
+  const minutesFromNow = (real) => Math.max(0, Math.round((real * 1000 - Date.now()) / 60000));
+  const joinDe = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} und ${items[items.length - 1]}`);
+
+  function notBefore(route, index) {
+    const leg = route.legs[index], prev = route.legs[index - 1];
+    if (prev && known(prev.arr)) return prev.arr + (prev.arrDelayMin || 0) * 60;
+    return Math.max(Date.now() / 1000, (leg.dep || 0) - 15 * 60); // nichts anbieten, was lange vor der gesuchten Zeit liegt
+  }
+
+  function loadAlts(leg, after) {
+    const key = `${leg.from.id}|${leg.line}|${leg.direction}|${Math.floor(after / 60)}`;
+    const hit = altCache.get(key);
+    if (hit && hit.list && Date.now() - hit.at < ALT_TTL) return Promise.resolve({ list: hit.list, fresh: true });
+    if (hit && hit.pending) return hit.pending;
+    const params = new URLSearchParams({ station: leg.from.id, line: leg.line, dir: leg.direction || "", after: String(Math.floor(after)), n: "6" });
+    const pending = getJson(`/api/alternatives?${params}`)
+      .then((d) => {
+        altCache.set(key, { at: Date.now(), list: d.alternatives });
+        return { list: d.alternatives, fresh: true };
+      })
+      .catch(() => {
+        altCache.delete(key);
+        return { list: hit && hit.list ? hit.list : [], fresh: false };
+      });
+    altCache.set(key, { ...(hit || {}), pending });
+    pending.finally(() => { const c = altCache.get(key); if (c && c.pending === pending) delete c.pending; });
+    return pending;
+  }
+
+  function showAlts(item, ri, route, list) {
+    const { el, leg, index } = item;
+    if (!el.isConnected) return;
+    const others = list.filter((a) => Math.abs(a.planned - leg.dep) > 45).slice(0, 3);
+    el.replaceChildren();
+    if (!others.length) return (el.hidden = true);
+    el.hidden = false;
+    const key = `${route.key}:${index}`;
+    const open = state.altOpen.has(key);
+    const toggle = node("button", "more alts-toggle");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.classList.toggle("open", open);
+    toggle.append(node("span", "", `Auch in ${joinDe(others.map((a) => `${minutesFromNow(a.real)} min`))}`), icon("chevron"));
+    const rows = node("div", "alt-list");
+    rows.hidden = !open;
+    toggle.addEventListener("click", () => {
+      rows.hidden = !rows.hidden;
+      toggle.setAttribute("aria-expanded", String(!rows.hidden));
+      toggle.classList.toggle("open", !rows.hidden);
+      if (rows.hidden) state.altOpen.delete(key);
+      else state.altOpen.add(key);
+    });
+    for (const alt of others) {
+      const b = node("button", "alt-item");
+      b.type = "button";
+      const t = node("span", "alt-t", hhmm(alt.real));
+      const meta = node("span", "alt-m", alt.delayMin ? `Plan ${hhmm(alt.planned)} · ${signed(alt.delayMin)} min` : `in ${minutesFromNow(alt.real)} min`);
+      const go = node("span", "alt-go", "Wählen");
+      b.append(t, meta, go);
+      b.setAttribute("aria-label", `Abfahrt um ${hhmm(alt.real)} Uhr wählen`);
+      b.addEventListener("click", () => chooseAlt(ri, index, alt, b));
+      rows.append(b);
+    }
+    el.append(toggle, rows);
+  }
+
+  async function hydrateAlts(body, ri, route) {
+    if (!body._alts || body._hydrated) return;
+    body._hydrated = true;
+    for (const item of body._alts) {
+      const after = notBefore(route, item.index);
+      const key = `${item.leg.from.id}|${item.leg.line}|${item.leg.direction}|${Math.floor(after / 60)}`;
+      const cached = altCache.get(key);
+      if (cached && cached.list) showAlts(item, ri, route, cached.list); // alte Werte sofort zeigen, damit nichts flackert
+      const { list } = await loadAlts(item.leg, after);
+      showAlts(item, ri, route, list);
+    }
+  }
+
+  async function rerouteCall(route, index, planned) {
+    const res = await postJson("/api/reroute", {
+      prefix: route.legs.slice(0, index),
+      leg: route.legs[index],
+      planned,
+      to: new URLSearchParams(state.last.params).get("to"),
+      tail: route.legs.length > index + 1,
+    });
+    return res.route;
+  }
+
+  async function chooseAlt(ri, index, alt, button) {
+    if (state.rerouting) return;
+    const route = state.data.routes[ri];
+    state.rerouting = true;
+    state.altError = null;
+    document.querySelectorAll(".alt-item").forEach((b) => (b.disabled = true));
+    button.querySelector(".alt-go").textContent = "Berechne …";
+    try {
+      const next = await rerouteCall(route, index, alt.planned);
+      next.key = route.key;
+      next.custom = { orig: route.custom ? route.custom.orig : route, picks: [...(route.custom ? route.custom.picks : []), { index, planned: alt.planned }] };
+      state.data.routes[ri] = next;
+      state.open.add(ri);
+    } catch (e) {
+      state.altError = { ri, text: e.message };
+    } finally {
+      state.rerouting = false;
+      renderResults();
+    }
+  }
+
+  function resetRoute(ri) {
+    const route = state.data.routes[ri];
+    if (route.custom) state.data.routes[ri] = route.custom.orig;
+    renderResults();
+  }
+
+  // Nach einer neuen Abfrage gewaehlte Abfahrten erneut anwenden (die neue Antwort kennt sie nicht)
+  async function reapplyPicks(previous, fresh) {
+    for (const old of previous.filter((r) => r.custom)) {
+      const at = fresh.routes.findIndex((r) => r.key === old.key);
+      if (at < 0) continue;
+      let current = fresh.routes[at];
+      const picks = [];
+      try {
+        for (const pick of old.custom.picks) {
+          const next = await rerouteCall(current, pick.index, pick.planned);
+          picks.push(pick);
+          next.key = current.key;
+          next.custom = { orig: current.custom ? current.custom.orig : current, picks: [...picks] };
+          current = next;
+        }
+        fresh.routes[at] = current;
+      } catch (e) {
+        state.refreshError = "Die gewählte Abfahrt ist nicht mehr verfügbar, die ursprüngliche Verbindung wird angezeigt.";
+      }
+    }
+  }
 
   // ---- Alter der Daten: "vor 12 s", jede Sekunde neu gezaehlt ----
 
@@ -606,18 +798,21 @@
       const trip = node("article", "trip" + (state.open.has(i) ? " open" : ""));
       const head = tripHead(r, t);
       head.setAttribute("aria-expanded", String(state.open.has(i)));
-      const body = tripBody(r, t);
+      const body = tripBody(r, t, { ri: i, route: r, alts: [] });
       body.hidden = !state.open.has(i);
       head.addEventListener("click", () => {
         const open = body.hidden;
         body.hidden = !open;
         trip.classList.toggle("open", open);
         head.setAttribute("aria-expanded", String(open));
-        if (open) state.open.add(i);
-        else state.open.delete(i);
+        if (open) {
+          state.open.add(i);
+          hydrateAlts(body, i, r);
+        } else state.open.delete(i);
       });
       trip.append(head, body);
       out.append(trip);
+      if (state.open.has(i)) hydrateAlts(body, i, r);
     });
   }
 
@@ -677,8 +872,12 @@
           params.set("when", $("when").value);
         }
         const data = await getJson(`/api/route?${params}`, signal);
-        state.data = { ...data, from: state.last.from, to: state.last.to };
+        const fresh = { ...data, from: state.last.from, to: state.last.to };
+        fresh.routes.forEach((r) => (r.key = routeKey(r)));
+        const previous = state.data.routes;
         state.last.params = params.toString();
+        await reapplyPicks(previous, fresh);
+        state.data = fresh;
         state.fetchedAt = Date.now();
         return renderResults();
       }
@@ -697,6 +896,9 @@
       params.set("when", $("when").value);
       const data = await getJson(`/api/route?${params}`, signal);
       state.data = { ...data, from: from.label, to: to.label };
+      state.data.routes.forEach((r) => (r.key = routeKey(r)));
+      state.altOpen.clear();
+      state.altError = null;
       state.last = { params: params.toString(), from: from.label, to: to.label };
       state.fetchedAt = Date.now();
       state.refreshError = "";
