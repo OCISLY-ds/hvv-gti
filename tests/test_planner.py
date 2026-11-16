@@ -358,7 +358,8 @@ class AlternativesTests(unittest.TestCase):
             p = Planner(client_for(gti), Reliability(None))
             now = datetime.now(TZ).timestamp()
             found = p.alternatives("Master:11021", "4", "Osakaallee", now + 10 * 60)["alternatives"]
-            self.assertEqual([round((a["real"] - now) / 60) for a in found], [26, 64])  # 4 min liegt vor dem fruehesten Zeitpunkt, 44 faellt aus
+            base = now // 60 * 60  # die Tafel rechnet ab der vollen Minute
+            self.assertEqual([round((a["real"] - base) / 60) for a in found], [26, 64])  # 4 min liegt vor dem fruehesten Zeitpunkt, 44 faellt aus
             self.assertEqual(found[0]["delayMin"], 2)
             p.alternatives("Master:11021", "4", "Osakaallee", now)
             self.assertEqual(len([r for r in gti.requests if r[0].endswith("departureList")]), 1)  # Tafel wird kurz gemerkt
