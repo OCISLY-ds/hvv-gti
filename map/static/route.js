@@ -472,7 +472,7 @@
 
   const minLabel = (t) => (t === 0 ? "nur Fahrplan" : `mind. ${t} min`);
 
-  function transferRow(tr, feeder, next, minTransfer) {
+  function transferRow(tr, feeder, next, minTransfer, ctx) {
     const walk = tr.walkMin || 0;
     const row = node("div", "tl xfer");
     const body = node("div", "body");
@@ -495,6 +495,12 @@
       const live = tr.waitMin + (next.depDelayMin || 0) - feeder.arrDelayMin - Math.max(walk, minTransfer);
       if (feeder.arrDelayMin || next.depDelayMin || live <= 0) {
         chips.append(node("span", "pill " + (live <= 0 ? "bad" : live <= 1 ? "mid" : "good"), live <= 0 ? "Nach aktueller Prognose verpasst" : `Aktuell ${dur(live)} Reserve`));
+        if (live <= 0 && ctx && state.ignore.has(ctx.route.key)) {
+          const again = node("button", "link", "Alternative anzeigen");
+          again.type = "button";
+          again.addEventListener("click", () => showAlternative(ctx.ri));
+          chips.append(again);
+        }
       }
     }
     if (chips.childElementCount) body.append(chips);
@@ -580,21 +586,43 @@
     if (by.ontimePct !== undefined) foot.append(node("span", "pill " + tone(by.ontimePct), `${pct(by.ontimePct)} pünktlich`));
     if (rel.cancelPct !== undefined && rel.cancelPct >= 1) foot.append(node("span", "pill " + (rel.cancelPct >= 5 ? "bad" : "mid"), `Ausfall ${pct(rel.cancelPct)}`));
     if (r.realArr && r.plannedArr && Math.round((r.realArr - r.plannedArr) / 60) >= 1) foot.append(node("span", "pill late1", `Ankunft +${Math.round((r.realArr - r.plannedArr) / 60)} min`));
-    if (r.custom) foot.append(node("span", "pill custom", "Eigene Abfahrt"));
+    if (r.custom && r.custom.picks.some((pick) => pick.auto)) foot.append(node("span", "pill custom", "Alternative"));
+    else if (r.custom) foot.append(node("span", "pill custom", "Eigene Abfahrt"));
+    if (isSaved(r)) foot.append(node("span", "pill saved", "★ Gemerkt"));
     head.append(foot);
     return head;
   }
 
   function tripBody(r, minTransfer, ctx) {
     const body = node("div", "trip-body");
+    const saved = isSaved(r);
+    const save = node("div", "save-row");
+    const saveBtn = node("button", "link", saved ? "★ Gemerkt – vergessen" : "☆ Diese Reise merken");
+    saveBtn.type = "button";
+    saveBtn.addEventListener("click", () => (saved ? forgetSaved() : saveRoute(ctx.ri)));
+    save.append(saveBtn);
+    if (!saved) save.append(node("span", "hint", "Du siehst sie beim nächsten Besuch wieder, mit aktuellen Zeiten."));
+    body.append(save);
     if (r.custom) {
-      const note = node("div", "custom-note");
-      note.append(node("span", "", "Du hast eine andere Abfahrt gewählt, der Rest der Route wurde neu berechnet."));
-      const undo = node("button", "link", "Zurücksetzen");
-      undo.type = "button";
-      undo.addEventListener("click", () => resetRoute(ctx.ri));
-      note.append(undo);
-      body.append(note);
+      const autos = r.custom.picks.some((pick) => pick.auto), manual = r.custom.picks.some((pick) => !pick.auto);
+      if (autos) {
+        const note = node("div", "custom-note auto");
+        note.append(node("span", "", `${(r.custom.reasons || []).join(" ")} Du siehst deshalb die Alternative.`));
+        const ignore = node("button", "link", "Prognose ignorieren");
+        ignore.type = "button";
+        ignore.addEventListener("click", () => ignoreForecast(ctx.ri));
+        note.append(ignore);
+        body.append(note);
+      }
+      if (manual) {
+        const note = node("div", "custom-note");
+        note.append(node("span", "", "Du hast eine andere Abfahrt gewählt, der Rest der Route wurde neu berechnet."));
+        const undo = node("button", "link", "Zurücksetzen");
+        undo.type = "button";
+        undo.addEventListener("click", () => resetRoute(ctx.ri));
+        note.append(undo);
+        body.append(note);
+      }
     }
     if (state.altError && state.altError.ri === ctx.ri) body.append(node("div", "note err", state.altError.text));
     const line = node("div", "line");
@@ -606,7 +634,7 @@
         if (!between) line.append(walkRow(leg, prev === null));
         return;
       }
-      if (leg.transfer) line.append(transferRow(leg.transfer, prev, leg, minTransfer));
+      if (leg.transfer) line.append(transferRow(leg.transfer, prev, leg, minTransfer, ctx));
       line.append(rideCard(leg, i, ctx));
       prev = leg;
     });
@@ -617,7 +645,7 @@
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), stopsOpen: new Set(), sig: "", altError: null, rerouting: false };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), stopsOpen: new Set(), ignore: new Set(), saved: null, lastLevel: "", sig: "", altError: null, rerouting: false };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -731,6 +759,7 @@
       next.custom = { orig: route.custom ? route.custom.orig : route, picks: [...(route.custom ? route.custom.picks : []), { index, planned: alt.planned }] };
       state.data.routes[ri] = next;
       state.open.add(ri);
+      syncSaved(next);
     } catch (e) {
       state.altError = { ri, text: e.message };
     } finally {
@@ -741,30 +770,299 @@
 
   function resetRoute(ri) {
     const route = state.data.routes[ri];
-    if (route.custom) state.data.routes[ri] = route.custom.orig;
+    if (route.custom) {
+      if (route.custom.picks.some((pick) => pick.auto)) state.ignore.add(route.key); // sonst wuerde die Alternative sofort wiederkommen
+      state.data.routes[ri] = route.custom.orig;
+      syncSaved(route.custom.orig);
+    }
     renderResults();
   }
 
-  // Nach einer neuen Abfrage gewaehlte Abfahrten erneut anwenden (die neue Antwort kennt sie nicht)
+  // Gewaehlte Abfahrten nacheinander auf eine Verbindung anwenden (jede neu berechnet den Rest)
+  async function applyPicks(route, picks) {
+    let current = route;
+    const done = [];
+    for (const pick of picks) {
+      const next = await rerouteCall(current, pick.index, pick.planned);
+      done.push(pick);
+      next.key = route.key;
+      next.custom = { orig: current.custom ? current.custom.orig : current, picks: [...done] };
+      current = next;
+    }
+    return current;
+  }
+
+  // Nach einer neuen Abfrage selbst gewaehlte Abfahrten erneut anwenden (die neue Antwort kennt sie nicht); automatische Alternativen
+  // werden dagegen jedes Mal neu bewertet
   async function reapplyPicks(previous, fresh) {
-    for (const old of previous.filter((r) => r.custom)) {
+    for (const old of previous.filter((r) => r.custom && r.custom.picks.some((pick) => !pick.auto))) {
       const at = fresh.routes.findIndex((r) => r.key === old.key);
       if (at < 0) continue;
-      let current = fresh.routes[at];
-      const picks = [];
       try {
-        for (const pick of old.custom.picks) {
-          const next = await rerouteCall(current, pick.index, pick.planned);
-          picks.push(pick);
-          next.key = current.key;
-          next.custom = { orig: current.custom ? current.custom.orig : current, picks: [...picks] };
-          current = next;
-        }
-        fresh.routes[at] = current;
+        fresh.routes[at] = await applyPicks(fresh.routes[at], old.custom.picks.filter((pick) => !pick.auto));
       } catch (e) {
         state.refreshError = "Die gewählte Abfahrt ist nicht mehr verfügbar, die ursprüngliche Verbindung wird angezeigt.";
       }
     }
+  }
+
+  // ---- Anschluss laut Prognose verpasst: direkt eine Alternative zeigen (mit Begruendung, ignorierbar) ----
+
+  // Erster Abschnitt, der laut Prognose nicht zu schaffen ist: verpasster Anschluss oder ausfallende Fahrt
+  function findProblem(route, minT) {
+    const t = minT === undefined ? minTransfer() : minT;
+    let feeder = null;
+    for (let i = 0; i < route.legs.length; i++) {
+      const leg = route.legs[i];
+      if (!leg.line) continue;
+      const tr = leg.transfer;
+      if (feeder && tr && known(feeder.arrDelayMin) && !feeder.cancelled && known(feeder.arr)) {
+        const walk = tr.walkMin || 0;
+        const base = tr.waitMin - Math.max(walk, t);
+        if (base + (leg.depDelayMin || 0) - feeder.arrDelayMin <= 0) {
+          return { kind: "missed", index: i, leg, feeder, base, station: leg.from.name, notBefore: feeder.arr + feeder.arrDelayMin * 60 + Math.max(walk, t) * 60 };
+        }
+      }
+      if (leg.cancelled) return { kind: "cancelled", index: i, leg, feeder, notBefore: leg.dep };
+      feeder = leg;
+    }
+    return null;
+  }
+
+  function reasonText(p, depart) {
+    if (p.kind === "cancelled") return `Die ${p.leg.line} um ${hhmm(p.leg.dep)} ab ${p.leg.from.name} fällt aus. Stattdessen: ${p.leg.line} um ${hhmm(depart)}.`;
+    return `Den Anschluss ${p.leg.line} in ${p.station} erreichst du laut Prognose nicht: ${p.feeder.line} kommt ${dur(p.feeder.arrDelayMin)} zu spät, die Reserve beträgt nur ${dur(Math.max(0, p.base))}. Stattdessen: ${p.leg.line} um ${hhmm(depart)}.`;
+  }
+
+  async function fixRoute(route) {
+    const p = findProblem(route);
+    if (!p) return null;
+    const { list } = await loadAlts(p.leg, p.notBefore - 60);
+    const candidate = list.find((a) => a.real >= p.notBefore && Math.abs(a.planned - p.leg.dep) > 45);
+    if (!candidate) return null;
+    const next = await rerouteCall(route, p.index, candidate.planned);
+    const prev = route.custom || { orig: route, picks: [], reasons: [] };
+    next.key = route.key;
+    next.custom = {
+      orig: prev.orig,
+      base: prev.base || route, // Stand vor der ersten automatischen Alternative: dorthin geht "Prognose ignorieren"
+      picks: [...prev.picks, { index: p.index, planned: candidate.planned, auto: true }],
+      reasons: [...(prev.reasons || []), reasonText(p, candidate.real)],
+    };
+    return next;
+  }
+
+  async function autoFixAll(data) {
+    for (let i = 0; i < data.routes.length; i++) {
+      if (state.ignore.has(data.routes[i].key)) continue;
+      let current = data.routes[i];
+      try {
+        for (let n = 0; n < 3; n++) {
+          const next = await fixRoute(current);
+          if (!next) break;
+          current = next;
+        }
+      } catch (e) { /* ohne Alternative bleibt die Verbindung, wie sie ist */ }
+      data.routes[i] = current;
+    }
+  }
+
+  function ignoreForecast(ri) {
+    const route = state.data.routes[ri];
+    state.ignore.add(route.key);
+    if (route.custom && route.custom.base) state.data.routes[ri] = route.custom.base;
+    renderResults();
+  }
+
+  async function showAlternative(ri) {
+    const route = state.data.routes[ri];
+    state.ignore.delete(route.key);
+    const holder = { routes: [route] };
+    try {
+      await autoFixAll(holder);
+    } finally {
+      state.data.routes[ri] = holder.routes[0];
+      renderResults();
+    }
+  }
+
+  // ---- Reise merken: beim naechsten Besuch wieder da, mit aktuellen Zeiten und Hinweisen ----
+
+  const SAVED_KEY = "hvv.saved";
+  const isSaved = (r) => !!state.saved && r.key === state.saved.key;
+  const localInputOf = (epoch) => new Date(epoch * 1000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  function loadSaved() {
+    try {
+      const v = JSON.parse(store.get(SAVED_KEY) || "null");
+      return v && v.key && v.from && v.to && v.snapshot && Array.isArray(v.picks) ? v : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  const persistSaved = () => store.set(SAVED_KEY, state.saved ? JSON.stringify(state.saved) : "");
+
+  function saveRoute(ri) {
+    const r = state.data.routes[ri];
+    state.saved = {
+      v: 1,
+      key: r.key,
+      from: state.last.fromPlace,
+      to: state.last.toPlace,
+      plannedDep: r.plannedDep,
+      plannedArr: r.plannedArr,
+      realArrAtSave: r.realArr || r.plannedArr,
+      picks: r.custom ? r.custom.picks.filter((pick) => !pick.auto) : [],
+      snapshot: JSON.parse(JSON.stringify({ ...r, custom: undefined })),
+      savedAt: Date.now(),
+    };
+    state.lastLevel = "";
+    persistSaved();
+    renderResults();
+  }
+
+  function forgetSaved() {
+    state.saved = null;
+    persistSaved();
+    renderResults();
+  }
+
+  // Aendert der Nutzer die Abfahrt der gemerkten Reise, merkt sich der Speicher die neue Wahl
+  function syncSaved(route) {
+    if (!isSaved(route)) return;
+    state.saved.picks = route.custom ? route.custom.picks.filter((pick) => !pick.auto) : [];
+    persistSaved();
+  }
+
+  const sameTrip = (sv) => {
+    const q = new URLSearchParams(state.last.params);
+    return q.get("from") === placeParam(sv.from) && q.get("to") === placeParam(sv.to);
+  };
+
+  // Gemerkte Reise in neue Ergebnisse einsetzen: nach oben holen; ist sie nicht mehr dabei, zeigt der gemerkte Stand
+  async function adoptSaved(data) {
+    const sv = state.saved;
+    if (!sv || !sameTrip(sv)) return;
+    const at = data.routes.findIndex((r) => r.key === sv.key);
+    if (at < 0) {
+      const old = JSON.parse(JSON.stringify(sv.snapshot));
+      old.key = sv.key;
+      old.stale = true;
+      data.routes.unshift(old);
+      return;
+    }
+    let r = data.routes[at];
+    if (!r.custom && sv.picks.length) {
+      try {
+        r = await applyPicks(r, sv.picks);
+      } catch (e) { /* die gewaehlte Abfahrt gibt es nicht mehr: Originalverbindung */ }
+    }
+    data.routes.splice(at, 1);
+    data.routes.unshift(r);
+  }
+
+  // Wo bist du gerade auf der Reise und was ist zu beachten?
+  function tripStatus(r, minT, nowS) {
+    const now = nowS === undefined ? Date.now() / 1000 : nowS;
+    const steps = [];
+    let shift = 0;
+    for (const leg of r.legs) {
+      if (!known(leg.dep) || !known(leg.arr)) continue;
+      if (leg.line) {
+        steps.push({ leg, dep: leg.dep + (leg.depDelayMin || 0) * 60, arr: leg.arr + (leg.arrDelayMin || 0) * 60 });
+        shift = (leg.arrDelayMin || 0) * 60;
+      } else steps.push({ leg, dep: leg.dep + shift, arr: leg.arr + shift });
+    }
+    if (!steps.length) return null;
+    const last = steps[steps.length - 1];
+    const lines = [];
+    let level = "ok", title;
+    const delay = r.realArr && r.plannedArr ? Math.round((r.realArr - r.plannedArr) / 60) : 0;
+    const where = (leg) => (leg.from.platform ? `${leg.from.name}, ${leg.from.platform}` : leg.from.name);
+    const upcoming = steps.filter((s) => s.leg.line && s.dep > now);
+    const active = steps.find((s) => now >= s.dep && now < s.arr);
+
+    if (now >= last.arr) return { level: "done", title: `Reise beendet – Ankunft ${hhmm(last.arr)}`, lines: ["Du kannst sie vergessen."] };
+    if (now < steps[0].dep || !active) {
+      const next = upcoming[0];
+      title = next ? `Als Nächstes: ${next.leg.line} ab ${where(next.leg)} um ${hhmm(next.dep)} (in ${dur(Math.max(0, Math.round((next.dep - now) / 60)))})` : "Unterwegs";
+    } else if (active.leg.line) {
+      title = `Unterwegs: ${active.leg.line} Richtung ${active.leg.direction || "–"}`;
+      lines.push(`Aussteigen in ${active.leg.to.name} um ${hhmm(active.arr)}${active.leg.arrDelayMin ? ` (${signed(active.leg.arrDelayMin)} min)` : ""}`);
+      if (upcoming[0]) lines.push(`Danach: ${upcoming[0].leg.line} ab ${where(upcoming[0].leg)} um ${hhmm(upcoming[0].dep)}`);
+    } else {
+      title = `Zu Fuß: ${active.leg.from.name || (state.last && state.last.from) || "Start"} → ${active.leg.to.name || (state.last && state.last.to) || "Ziel"}`;
+      lines.push(`Noch ${dur(Math.max(1, Math.round((active.arr - now) / 60)))}`);
+      if (upcoming[0]) lines.push(`Danach: ${upcoming[0].leg.line} ab ${where(upcoming[0].leg)} um ${hhmm(upcoming[0].dep)}`);
+    }
+    lines.push(delay >= 1 ? `Ankunft ${hhmm(last.arr)} (+${dur(delay)})` : `Ankunft ${hhmm(last.arr)}, pünktlich`);
+    const sv = state.saved;
+    if (sv && known(sv.realArrAtSave) && r.realArr && Math.abs(Math.round((r.realArr - sv.realArrAtSave) / 60)) >= 2) {
+      const diff = Math.round((r.realArr - sv.realArrAtSave) / 60);
+      lines.push(`Seit dem Merken: Ankunft ${diff > 0 ? `${dur(diff)} später` : `${dur(-diff)} früher`}`);
+    }
+    if (delay >= 5) level = "warn";
+    if (r.custom && r.custom.picks.some((pick) => pick.auto)) {
+      level = "warn";
+      lines.unshift(`Route angepasst: ${r.custom.reasons[r.custom.reasons.length - 1]}`);
+    }
+    const problem = findProblem(r, minT);
+    if (problem) {
+      level = "bad";
+      lines.unshift(problem.kind === "cancelled" ? `Die ${problem.leg.line} fällt aus.` : `Anschluss ${problem.leg.line} in ${problem.station} laut Prognose verpasst.`);
+    }
+    if (r.stale) {
+      level = level === "bad" ? "bad" : "warn";
+      lines.push("Diese Verbindung ist in der aktuellen Abfrage nicht mehr enthalten, gezeigt wird der gemerkte Stand.");
+    }
+    return { level, title, lines };
+  }
+
+  const LEVEL_RANK = { ok: 0, done: 0, warn: 1, bad: 2 };
+  function statusBanner(r) {
+    const st = tripStatus(r, minTransfer());
+    if (!st) return null;
+    const box = node("div", "status " + st.level);
+    box.append(node("strong", "", st.title));
+    st.lines.forEach((text) => box.append(node("div", "", text)));
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      const ask = node("button", "link", "Bei Störungen benachrichtigen");
+      ask.type = "button";
+      ask.addEventListener("click", () => Notification.requestPermission().then(() => renderResults()));
+      box.append(ask, node("span", "hint", " (nur solange die Seite geöffnet ist)"));
+    }
+    if (LEVEL_RANK[st.level] > LEVEL_RANK[state.lastLevel || "ok"] && document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification(`HVV: ${st.title}`, { body: st.lines.slice(0, 2).join(" · "), tag: "hvv-saved" });
+      } catch (e) { /* Benachrichtigungen nicht moeglich */ }
+    }
+    state.lastLevel = st.level;
+    return box;
+  }
+
+  function updateSavedBar() {
+    const bar = $("savedbar");
+    const shown = state.data && state.data.routes.some((r) => isSaved(r));
+    bar.hidden = !state.saved || !!shown;
+    if (bar.hidden) return;
+    const sv = state.saved;
+    bar.replaceChildren();
+    const open = node("button", "link", `★ Gemerkte Reise anzeigen: ${sv.from.label} → ${sv.to.label}, ${hhmm(sv.plannedDep)} Uhr`);
+    open.type = "button";
+    open.addEventListener("click", () => restoreSaved(sv));
+    const drop = node("button", "link", "Vergessen");
+    drop.type = "button";
+    drop.addEventListener("click", forgetSaved);
+    bar.append(open, drop);
+  }
+
+  function restoreSaved(sv) {
+    fields.from.set(sv.from);
+    fields.to.set(sv.to);
+    whenTouched = true;
+    $("when").value = localInputOf(sv.plannedDep);
+    document.querySelectorAll(".seg [role=radio]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.arrive === "0")));
+    return search();
   }
 
   // ---- Alter der Daten: "vor 12 s", jede Sekunde neu gezaehlt ----
@@ -805,6 +1103,7 @@
     out.replaceChildren();
     $("foot").hidden = !state.data || !state.data.routes.length;
     const data = state.data;
+    updateSavedBar();
     if (!data) return;
     if (state.fetchedAt) {
       out.append(ageRow());
@@ -817,7 +1116,9 @@
     }
     const t = minTransfer();
     data.routes.forEach((r, i) => {
-      const trip = node("article", "trip" + (state.open.has(i) ? " open" : ""));
+      const trip = node("article", "trip" + (state.open.has(i) ? " open" : "") + (isSaved(r) ? " saved" : ""));
+      const banner = isSaved(r) ? statusBanner(r) : null;
+      if (banner) trip.append(banner);
       const head = tripHead(r, t);
       head.setAttribute("aria-expanded", String(state.open.has(i)));
       const body = tripBody(r, t, { ri: i, route: r, alts: [] });
@@ -899,7 +1200,7 @@
         const previous = state.data.routes;
         const sig = sigOf(fresh.routes);
         state.last.params = params.toString();
-        if (sig === state.sig && !previous.some((r) => r.custom) && !state.refreshError) {
+        if (sig === state.sig && !previous.some((r) => r.custom || isSaved(r)) && !state.refreshError) {
           // nichts hat sich geaendert: Liste stehen lassen (kein Zuklappen oder Springen), nur der Stand wird neu
           state.fetchedAt = Date.now();
           const btn = document.querySelector(".age .refresh");
@@ -911,6 +1212,8 @@
         }
         state.sig = sig;
         await reapplyPicks(previous, fresh);
+        await adoptSaved(fresh);
+        await autoFixAll(fresh);
         state.data = fresh;
         state.fetchedAt = Date.now();
         return renderResults();
@@ -935,7 +1238,9 @@
       state.altOpen.clear();
       state.stopsOpen.clear();
       state.altError = null;
-      state.last = { params: params.toString(), from: from.label, to: to.label };
+      state.last = { params: params.toString(), from: from.label, to: to.label, fromPlace: from, toPlace: to };
+      await adoptSaved(state.data);
+      await autoFixAll(state.data);
       state.fetchedAt = Date.now();
       state.refreshError = "";
       state.open = new Set([0]);
@@ -1000,6 +1305,12 @@
       tickAge();
       autoRefresh(); // zurueck im Tab: sofort neu abrufen, wenn der Stand alt ist
     });
+    state.saved = loadSaved();
+    if (state.saved) {
+      const sv = state.saved;
+      if (Date.now() / 1000 > Math.max(sv.plannedArr || 0, sv.realArrAtSave || 0) + 30 * 60) forgetSaved(); // Reise ist laengst vorbei
+      else restoreSaved(sv);
+    }
     getJson("/api/colors").then((c) => Object.assign(COLORS, c)).catch(() => {});
   }
 
@@ -1007,5 +1318,5 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
   }
-  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText, dur };
+  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText, dur, findProblem, tripStatus, reasonText, state };
 })(typeof self !== "undefined" ? self : this);

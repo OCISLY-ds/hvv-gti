@@ -311,6 +311,20 @@ button { cursor: pointer; }
 .alt-go { color: var(--primary); font-size: 14px; font-weight: 700; }
 .custom-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--sunken); color: var(--mute); font-size: 13px; }
 .custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-weight: 700; text-decoration: underline; }
+.status { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--good-bg); color: var(--ink); font-size: 14px; }
+.status strong { display: block; font-size: 15px; margin-bottom: 2px; }
+.status .hint { display: inline; }
+.status.warn { background: var(--mid-bg); }
+.status.bad { background: var(--bad-bg); }
+.status.done { background: var(--sunken); }
+.trip.saved { box-shadow: 0 0 0 2px var(--glow), var(--shadow); }
+.savedbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin-top: 10px; padding: 4px 14px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: underline; text-align: left; }
+.save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-top: 2px; }
+.save-row .hint { font-size: 12.5px; }
+.custom-note.auto { background: var(--mid-bg); color: var(--mid); }
+.pill.saved { background: color-mix(in srgb, var(--mrh-gold) 30%, var(--surface)); color: var(--ink); }
+.xchips .link { min-height: 32px; }
 .pill.custom { background: color-mix(in srgb, var(--glow) 28%, var(--surface)); color: var(--ink); }
 .note.err { background: var(--bad-bg); color: var(--bad); }
 
