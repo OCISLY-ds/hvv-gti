@@ -54,9 +54,10 @@ test("text colours keep AA contrast on their surfaces in light and dark mode", (
   }
 });
 
-test("the Hamburg band and bow are part of the page and carry no text", () => {
+test("the page has no header block and the destination marker is the geo-alt pin", () => {
   const html = fs.readFileSync(path.join(__dirname, "../../map/static/index.html"), "utf8");
-  assert.match(html, /<div class="band" aria-hidden="true"><span class="bow"><\/span><\/div>/);
+  assert.ok(!html.includes('class="top"') && !html.includes('class="band"'));
+  assert.match(html, /<svg class="mark to"[^>]*viewBox="0 0 16 16"[^>]*><path d="M8 16s6-5\.686 6-10A6 6 0 0 0 2 6c0 4\.314 6 10 6 10m0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6"\/><\/svg>/);
 });
 
 test("every transport mode has an icon the planner can draw", () => {

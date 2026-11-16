@@ -114,7 +114,7 @@ Entscheidung des Auftraggebers: Der Planer passt optisch zur Metropolregion Hamb
 
 - **Palette:** Dunkelblau `#003064` ist Primär-, Schrift- und Knopffarbe. Cyan `#40C0F0` ist Glühen des Fokusrings und im Dunkelmodus die Primärfarbe. Text in Grün, Gold und Rot ist abgedunkelt (`#00722f`, `#7a4b00`, `#b3241a`, Kontrast ≥ 4,5 : 1), die Originalfarben stehen als `--good-fill`, `--mid-fill`, `--bad-fill` für Balken und Flächen. Wer die Werte ändert, wird vom Test `tests/js/route.test.js` auf unzureichenden Kontrast hingewiesen.
 - **Schrift:** Arial (Rückfall Liberation Sans/Helvetica) als vom Handbuch genannter Ersatz für HamburgSans. Überschriften fett, linksbündig, keine Versalien.
-- **Hamburger Elemente:** Dunkelblaues Band am Seitenende über die ganze Breite und roter Schiffsbug links mittig auf der Oberkante (75 % der Bandhöhe, 3,5 × so breit wie hoch, frei von Text), als eigene Nachzeichnung in CSS. **Nicht** enthalten sind Wort-Bild-Marke und Textkasten „Metropolregion Hamburg“. Das Angebot ist kein offizielles Angebot der Metropolregion; die Marke würde das nahelegen.
+- **Hamburger Elemente:** Band und roter Schiffsbug waren zunächst eingebaut und wurden am 16.11.2026 auf Wunsch wieder entfernt. Es bleiben Palette und Schrift. Der Seitenkopf („Routenplaner · Hamburger Verkehrsverbund“) entfällt ebenfalls, nur eine unsichtbare Überschrift für Screenreader bleibt. Das Ziel im Eingabefeld ist der Pin `geo-alt-fill` (Bootstrap Icons).
 - **Dunkelmodus:** Abgedunkelte Blautöne als Flächen, Cyan als Primärfarbe (das Handbuch kennt keinen Dunkelmodus, die Werte sind abgeleitet).
 - **Noch offen:** Abstands-Tokens `--s1…--s7` und die restlichen festen Hex-Werte der Linienschilder (`#fff`, `#c9d0dc`, `#1b2636`).
 

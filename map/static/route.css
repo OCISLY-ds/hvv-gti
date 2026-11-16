@@ -27,7 +27,6 @@
   --bad: #b3241a;
   --bad-bg: #fce7e5;
   --bad-fill: #e63328;
-  --band: #003064;
   --shadow: 0 1px 2px rgb(0 48 100 / 8%), 0 4px 14px rgb(0 48 100 / 7%);
   --radius: 18px;
   --tap: 48px;
@@ -52,7 +51,6 @@
     --mid-bg: #363d3a;
     --bad: #ff8f85;
     --bad-bg: #42273c;
-    --band: #002a58;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
   }
 }
@@ -77,9 +75,6 @@ button { cursor: pointer; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-.top { padding: 6px 4px 14px; }
-.top h1 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 700; color: var(--ink); }  /* Headline fett, linksbuendig, keine Versalien (Handbuch S. 19) */
-.top p { margin: 4px 0 0; color: var(--mute); font-size: 14px; }
 
 .card { position: relative; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
 
@@ -102,7 +97,7 @@ button { cursor: pointer; }
 .field:not(:has(.locate)) input[type="text"] { padding-right: 46px; }
 .mark { position: absolute; left: 16px; top: 50%; width: 14px; height: 14px; margin-top: -7px; pointer-events: none; }
 .mark.from { border: 3px solid var(--ink); border-radius: 50%; background: var(--surface); }
-.mark.to { background: var(--primary); border-radius: 50% 50% 50% 0; transform: rotate(-45deg) scale(1.1); }
+.mark.to { left: 14px; width: 18px; height: 18px; margin-top: -9px; color: var(--primary); } /* Ziel-Pin (Bootstrap Icons geo-alt-fill) */
 .fields::before { /* gepunktete Linie zwischen Start- und Zielmarke */
   content: "";
   position: absolute;
@@ -221,7 +216,7 @@ button { cursor: pointer; }
 .primary:disabled { opacity: 0.6; cursor: progress; }
 
 /* ---- Ergebnisse ---- */
-#out { margin-top: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+#out { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .age { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 0 6px; font-size: 14px; color: var(--mute); }
 .age .age-text { min-width: 0; }
 .age b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -242,16 +237,17 @@ button { cursor: pointer; }
 .skel i:nth-child(3) { width: 64%; margin-bottom: 0; }
 
 .trip { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-.trip-head { display: block; width: 100%; min-width: 0; padding: 14px 16px 12px; border: 0; background: none; text-align: left; }
+.trip-head { display: block; width: 100%; min-width: 0; padding: 10px 14px 10px; border: 0; background: none; text-align: left; }
 .trip-top { display: flex; align-items: baseline; gap: 10px; }
-.trip-time { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.trip-time { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .trip-dur { color: var(--mute); font-size: 15px; font-variant-numeric: tabular-nums; }
 .trip-chev { margin-left: auto; align-self: center; width: 22px; height: 22px; color: var(--mute); transition: transform 0.15s; }
 .trip.open .trip-chev { transform: rotate(180deg); }
-.trip-mid { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.trip-mid { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px; }
+.trip-mid .lb img { height: 20px; }
 .trip-mid .sep { color: var(--mute); font-size: 12px; }
-.trip-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; font-size: 13px; color: var(--mute); }
-.pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; background: var(--sunken); color: var(--ink); }
+.trip-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px; font-size: 13px; color: var(--mute); }
+.pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 8px; border-radius: 11px; font-size: 12.5px; font-weight: 600; background: var(--sunken); color: var(--ink); }
 .pill.good { background: var(--good-bg); color: var(--good); }
 .pill.mid { background: var(--mid-bg); color: var(--mid); }
 .pill.bad { background: var(--bad-bg); color: var(--bad); }
@@ -300,7 +296,7 @@ button { cursor: pointer; }
 /* Verkehrsmittel-Symbol (Bus, S-Bahn, U-Bahn, Regionalzug, Faehre), Farbe der Linie */
 .mode { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; }
 .mode svg { width: 100%; height: 100%; display: block; }
-.trip-mid .mode { width: 22px; height: 22px; margin-right: -2px; }
+.trip-mid .mode { width: 20px; height: 20px; margin-right: -2px; }
 .dir .mode { width: 22px; height: 22px; }
 
 /* Andere Abfahrt derselben Linie ("Auch in 28 min und 48 min") */
@@ -349,18 +345,11 @@ div.more { cursor: default; }
 
 .foot { margin: 18px 6px 0; font-size: 12px; color: var(--mute); }
 
-/* Hamburger Gestaltungselemente (Handbuch S. 6-8, eigene Nachzeichnung ohne Wort-Bild-Marke): Band in Dunkelblau am unteren Rand ueber die
-   ganze Breite, roter Schiffsbug links mittig auf der Oberkante, 75 % der Bandhoehe, 3,5 x so breit wie hoch, immer frei von Text. */
-.band { position: relative; height: 32px; margin-top: 8px; background: var(--band); padding-bottom: env(safe-area-inset-bottom); box-sizing: content-box; }
-.band .bow { position: absolute; left: 0; top: 4px; width: 84px; height: 24px; background: var(--mrh-rot); clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); }
-@media (min-width: 720px) { .band { height: 40px; } .band .bow { top: 5px; width: 105px; height: 30px; } }
-
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { to { background-position: -100% 0; } }
 
 @media (min-width: 720px) {
   main { padding-top: 32px; }
-  .top h1 { font-size: 32px; }
 }
 @media (max-width: 420px) {
   .xsub, .xchips { margin-left: 0; }
