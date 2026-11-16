@@ -329,6 +329,7 @@ def mode_of(line: dict) -> str:
 
 STATION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,40}$")
 PLACE_TYPES = ("STATION", "ADDRESS", "POI", "COORDINATE")
+NEAR_STATION_M = 400  # weiter weg ist eine Haltestelle keine sinnvolle Ortsangabe fuer den Standort
 PLACE_CACHE_S = 3600
 PLACE_CACHE_MAX = 500
 LON_RANGE, LAT_RANGE = (5.0, 16.0), (47.0, 56.0)  # Deutschland samt Rand; alles andere kann der HVV-Dienst ohnehin nicht routen
@@ -416,15 +417,23 @@ class Planner:
         return out
 
     def reverse(self, x: float, y: float) -> dict | None:
-        """Naechstgelegene Adresse zu einer Koordinate (GTI checkName mit Typ COORDINATE); None, wenn sie keine kennt.
-        Die Position geht nur an die GTI, die den Planer ohnehin bedient, an keinen Dritten."""
+        """Beschriftung zu einer Koordinate: die naechste Adresse (GTI checkName, Typ COORDINATE), sonst "Nahe <Haltestelle>" (Typ STATION
+        mit Koordinate liefert die naechsten Haltestellen samt Entfernung); None, wenn beides nichts hergibt. Die Position geht nur an
+        die GTI, die den Planer ohnehin bedient, an keinen Dritten."""
         if not (LON_RANGE[0] <= x <= LON_RANGE[1] and LAT_RANGE[0] <= y <= LAT_RANGE[1]):
             raise ValueError("Koordinate")
-        data = self.client.post("checkName", {"theName": {"name": "", "type": "COORDINATE", "coordinate": {"x": x, "y": y}}, "maxList": 1})
+        where = {"coordinate": {"x": x, "y": y}, "name": ""}
+        data = self.client.post("checkName", {"theName": {**where, "type": "COORDINATE"}, "maxList": 1})
         for item in data.get("results") or []:
             name, city = (item.get("name") or "").strip(), (item.get("city") or "").strip()
             if name:
-                return {"name": name, "city": city, "label": f"{name}, {city}" if city and city not in name else name}
+                return {"name": name, "city": city, "kind": "address", "label": f"{name}, {city}" if city and city not in name else name}
+        data = self.client.post("checkName", {"theName": {**where, "type": "STATION"}, "maxList": 3})
+        near = [i for i in data.get("results") or [] if i.get("name") and (i.get("distance") is None or i["distance"] <= NEAR_STATION_M)]
+        if near:
+            best = min(near, key=lambda i: i.get("distance", 0))
+            name, city = best["name"].strip(), (best.get("city") or "").strip()
+            return {"name": name, "city": city, "kind": "station", "label": f"Nahe {name}, {city}" if city and city not in name else f"Nahe {name}"}
         return None
 
     def stations(self, query: str, limit: int = 8) -> list[dict]:

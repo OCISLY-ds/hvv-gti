@@ -492,13 +492,17 @@
     return row;
   }
 
-  function walkRow(leg) {
+  // Start/Ziel ohne Haltestelle (Adresse, Standort): die GTI liefert dort keinen Namen, dann steht die Eingabe aus der Suche
+  function walkRow(leg, isFirst) {
     const row = node("div", "tl xfer");
     const body = node("div", "body");
     const text = node("div", "xtext");
     text.append(icon("walk"), node("span", "", `Gehe ${leg.walkMin} min zu Fuß`));
     body.append(text);
-    if (leg.from.name !== leg.to.name) body.append(node("div", "xsub", `${leg.from.name} → ${leg.to.name}`));
+    const searched = state.last || {};
+    const from = leg.from.name || (isFirst ? searched.from : searched.to) || "Start";
+    const to = leg.to.name || (isFirst ? searched.from : searched.to) || "Ziel";
+    if (from !== to) body.append(node("div", "xsub", `${from} → ${to}`));
     row.append(node("div", "tm"), node("div", "rail"), body);
     return row;
   }
@@ -588,7 +592,7 @@
       if (!leg.line) {
         // Fusswege zwischen zwei Fahrten gehoeren zur Umstiegszeile; nur Wege vor der ersten und nach der letzten Fahrt stehen allein
         const between = prev !== null && r.legs.slice(i + 1).some((l) => l.line);
-        if (!between) line.append(walkRow(leg));
+        if (!between) line.append(walkRow(leg, prev === null));
         return;
       }
       if (leg.transfer) line.append(transferRow(leg.transfer, prev, leg, minTransfer));

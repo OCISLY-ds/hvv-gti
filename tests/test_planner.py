@@ -418,10 +418,27 @@ class WalkAndReverseTests(unittest.TestCase):
         found = {"returnCode": "OK", "results": [{"name": "Weidenbaumsweg 14", "city": "Hamburg", "combinedName": "(Nähe) Weidenbaumsweg 14", "type": "COORDINATE"}]}
         with FakeGti(responses={"checkName": found}) as gti:
             p = Planner(client_for(gti), Reliability(None))
-            self.assertEqual(p.reverse(10.2057, 53.4895), {"name": "Weidenbaumsweg 14", "city": "Hamburg", "label": "Weidenbaumsweg 14, Hamburg"})
+            self.assertEqual(p.reverse(10.2057, 53.4895), {"name": "Weidenbaumsweg 14", "city": "Hamburg", "kind": "address", "label": "Weidenbaumsweg 14, Hamburg"})
             sent = [r[1] for r in gti.requests][-1]
             self.assertEqual(sent["theName"], {"name": "", "type": "COORDINATE", "coordinate": {"x": 10.2057, "y": 53.4895}})
             with self.assertRaises(ValueError):
                 p.reverse(0.0, 0.0)
         with FakeGti(responses={"checkName": {"returnCode": "OK", "results": []}}) as gti:
             self.assertIsNone(Planner(client_for(gti), Reliability(None)).reverse(10.2, 53.5))
+
+    def test_reverse_geocoding_falls_back_to_the_nearest_station(self):
+        def check_name(body):  # Gewerbegebiet: die GTI kennt dort keine Adresse, nur die Koordinate und Haltestellen
+            if body["theName"]["type"] == "COORDINATE":
+                return {"returnCode": "OK", "results": [{"type": "COORDINATE", "coordinate": body["theName"]["coordinate"]}]}
+            return {"returnCode": "OK", "results": [
+                {"name": "Airbus (Eingang)", "city": "Stade", "type": "STATION", "distance": 190},
+                {"name": "Airbus/CFK Nord", "city": "Stade", "type": "STATION", "distance": 88},
+                {"name": "Weit weg", "city": "Stade", "type": "STATION", "distance": 900},
+            ]}
+
+        with FakeGti(responses={"checkName": check_name}) as gti:
+            found = Planner(client_for(gti), Reliability(None)).reverse(9.5086, 53.5742)
+        self.assertEqual((found["kind"], found["label"]), ("station", "Nahe Airbus/CFK Nord, Stade"))
+        far = lambda body: {"returnCode": "OK", "results": [{"name": "Weit weg", "city": "Stade", "type": "STATION", "distance": 900}] if body["theName"]["type"] == "STATION" else []}
+        with FakeGti(responses={"checkName": far}) as gti:
+            self.assertIsNone(Planner(client_for(gti), Reliability(None)).reverse(9.5086, 53.5742))
