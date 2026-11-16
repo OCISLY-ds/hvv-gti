@@ -16,9 +16,9 @@ Grundlage: **Gestaltungshandbuch der Metropolregion Hamburg** (Stylequide MRH, 2
 |---|---|---|---|---|
 | `--mrh-blau` | `#003064` | Dunkelblau, „Schrift- und Gestaltungsfarbe“ | 13,1 : 1 | Primärfarbe: Hauptknopf, Links, Überschriften |
 | `--mrh-cyan` | `#40C0F0` | Logofarbe | 2,1 : 1 | nur Fläche/Deko (Fokusring, Balken), **nie Text** auf Weiß |
-| `--mrh-rot` | `#E63328` | Logofarbe | 4,3 : 1 | Ausfall, Fehler, Warnung (nur ≥ 18 px/fett als Text) |
+| `--mrh-rot` | `#E63328` | Logofarbe | 4,3 : 1 | Ausfall-Balken und Schiffsbug; als Text nur abgedunkelt `#b3241a` |
 | `--mrh-gruen` | `#80BA27` | Logofarbe | 2,3 : 1 | Flächen („pünktlich“-Balken), nicht als Text |
-| `--mrh-gruen-dunkel` | `#008035` | Alternativfarbe | 5,1 : 1 | Text/Symbol für „pünktlich“ |
+| `--mrh-gruen-dunkel` | `#008035` | Alternativfarbe | 5,1 : 1 | Vorlage für Text „pünktlich“ (im Planer `#00722f` auf hellgrünem Grund, 5,3 : 1) |
 | `--mrh-gold` | `#E4A519` | Alternativfarbe | 2,2 : 1 | Flächen für „leicht verspätet“, Text nur dunkel darauf |
 | `--mrh-violett` | `#771C7F` | Alternativfarbe | 9,3 : 1 | Hervorhebung, sparsam |
 | `--mrh-braun` | `#8E3322` | Alternativfarbe | 7,9 : 1 | Textfarbe für „stark verspätet“ auf hellem Grund |
@@ -108,15 +108,19 @@ Jeweils: Zweck · Zustände · Barrierefreiheit. Quelle ist `route.css`/`route.j
 
 **Wert: etwa 78/100.** Die größten Lücken sind fehlende Spacing-Tokens und verstreute Hex-Werte.
 
-## 5. Vorschlag zur Umsetzung (noch nicht angewendet)
+## 5. Umsetzung (16.11.2026, angewendet in `route.css`)
 
-1. `route.css`: `--primary` von `#0a4fb8` auf `--mrh-blau` `#003064` (Hellmodus), im Dunkelmodus Cyan `#40C0F0`; `--good` auf `#008035`, `--mid-bg` auf Gold-Abstufung, `--bad` auf `#E63328` mit `#8E3322` als Text.
-2. Spacing-Tokens `--s1…--s7` einführen und die freien Pixelwerte ersetzen.
-3. Hex-Reste (`#e0a21c`, `#c9d0dc`, `#1b2636`) in Tokens überführen.
-4. Als Test (`tests/js/route.test.js`) prüfen, dass jede Textfarbe auf ihrem Hintergrund ≥ 4,5 : 1 hat.
+Entscheidung des Auftraggebers: Der Planer passt optisch zur Metropolregion Hamburg und enthält Gestaltungselemente aus Hamburg. HamburgSans darf nicht verwendet werden, ein HVV-Handbuch gibt es nicht.
+
+- **Palette:** Dunkelblau `#003064` ist Primär-, Schrift- und Knopffarbe. Cyan `#40C0F0` ist Glühen des Fokusrings und im Dunkelmodus die Primärfarbe. Text in Grün, Gold und Rot ist abgedunkelt (`#00722f`, `#7a4b00`, `#b3241a`, Kontrast ≥ 4,5 : 1), die Originalfarben stehen als `--good-fill`, `--mid-fill`, `--bad-fill` für Balken und Flächen. Wer die Werte ändert, wird vom Test `tests/js/route.test.js` auf unzureichenden Kontrast hingewiesen.
+- **Schrift:** Arial (Rückfall Liberation Sans/Helvetica) als vom Handbuch genannter Ersatz für HamburgSans. Überschriften fett, linksbündig, keine Versalien.
+- **Hamburger Elemente:** Dunkelblaues Band am Seitenende über die ganze Breite und roter Schiffsbug links mittig auf der Oberkante (75 % der Bandhöhe, 3,5 × so breit wie hoch, frei von Text), als eigene Nachzeichnung in CSS. **Nicht** enthalten sind Wort-Bild-Marke und Textkasten „Metropolregion Hamburg“. Das Angebot ist kein offizielles Angebot der Metropolregion; die Marke würde das nahelegen.
+- **Dunkelmodus:** Abgedunkelte Blautöne als Flächen, Cyan als Primärfarbe (das Handbuch kennt keinen Dunkelmodus, die Werte sind abgeleitet).
+- **Noch offen:** Abstands-Tokens `--s1…--s7` und die restlichen festen Hex-Werte der Linienschilder (`#fff`, `#c9d0dc`, `#1b2636`).
 
 ## 6. Offene Fragen
 
-- Soll der Planer **optisch** zur Metropolregion Hamburg passen (dann Palette übernehmen) oder zum HVV (dann die jetzige Palette behalten)? Das Handbuch passt nur zur Metropolregion.
-- Darf HamburgSans im Web eingesetzt werden (Lizenz vom Hamburger Mediaserver prüfen), oder bleibt es beim Systemfont?
-- Gibt es ein HVV-Gestaltungshandbuch? Das wäre für ein HVV-Werkzeug die passendere Grundlage.
+Beantwortet am 16.11.2026: Der Planer folgt dem Handbuch der Metropolregion, HamburgSans ist nicht erlaubt (Arial als Ersatz), ein HVV-Handbuch existiert nicht.
+
+- Soll der rote Bug zusätzlich im Kopf der Seite oder als Ladeanimation auftauchen? Das Handbuch sieht ihn nur am Bandrand vor.
+- Soll die Metropolregion als Herausgeber genannt werden? Dafür bräuchte es ihre Zustimmung.

@@ -1,41 +1,58 @@
 /* HVV Routenplaner: Handy zuerst, ab ~720 px zentrierte Spalte. Farben als Tokens, Dunkelmodus folgt dem System. */
 :root {
-  --bg: #eef1f6;
+  /* Farben: Hauptfarben und Alternativfarben des Gestaltungshandbuchs der Metropolregion Hamburg (docs/design-system.md).
+     Dunkelblau #003064 ist Schrift- und Gestaltungsfarbe; Cyan/Gruen/Rot/Gold sind Flaechenfarben. Fuer Text sind Gruen, Gold und Rot
+     abgedunkelt (Kontrast >= 4,5 : 1), die Flaechenfarben stehen als --*-fill. */
+  --mrh-blau: #003064;
+  --mrh-cyan: #40c0f0;
+  --mrh-gruen: #80ba27;
+  --mrh-rot: #e63328;
+  --mrh-gold: #e4a519;
+  --bg: #f2f5f9;
   --surface: #ffffff;
-  --sunken: #f3f5f9;
-  --ink: #0f172a;
-  --mute: #556072;
-  --line: #dde2ec;
-  --primary: #0a4fb8;
+  --sunken: #eaf0f6;
+  --ink: #003064;
+  --mute: #4a5f78;
+  --line: #d3dce8;
+  --primary: #003064;
   --on-primary: #ffffff;
-  --focus: #0a4fb8;
-  --good: #17803d;
-  --good-bg: #e0f3e7;
-  --mid: #a35200;
-  --mid-bg: #fdecd2;
-  --bad: #c01f2b;
-  --bad-bg: #fbe0e1;
-  --shadow: 0 1px 2px rgb(15 23 42 / 8%), 0 4px 14px rgb(15 23 42 / 6%);
+  --focus: #003064;
+  --glow: #40c0f0;
+  --good: #00722f;
+  --good-bg: #e8f3d8;
+  --good-fill: #80ba27;
+  --mid: #7a4b00;
+  --mid-bg: #f9ebcc;
+  --mid-fill: #e4a519;
+  --bad: #b3241a;
+  --bad-bg: #fce7e5;
+  --bad-fill: #e63328;
+  --band: #003064;
+  --shadow: 0 1px 2px rgb(0 48 100 / 8%), 0 4px 14px rgb(0 48 100 / 7%);
   --radius: 18px;
   --tap: 48px;
+  --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif; /* HamburgSans ist nicht frei nutzbar; das Handbuch nennt Arial als Ersatz */
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1320;
-    --surface: #172033;
-    --sunken: #1d2840;
-    --ink: #eef2f9;
-    --mute: #9eabc0;
-    --line: #2a364d;
-    --primary: #7aa9ff;
-    --on-primary: #04112b;
-    --focus: #9dc0ff;
-    --good: #52c984;
-    --good-bg: #173a29;
-    --mid: #f2ab4a;
-    --mid-bg: #433116;
-    --bad: #ff8087;
-    --bad-bg: #482127;
+    /* Dunkelblau traegt auf dunklem Grund nicht (1,4 : 1): Cyan wird Primaerfarbe, Flaechen sind abgedunkeltes Dunkelblau */
+    --bg: #04152a;
+    --surface: #0b2342;
+    --sunken: #12304f;
+    --ink: #e8f1fb;
+    --mute: #9db3cc;
+    --line: #234466;
+    --primary: #40c0f0;
+    --on-primary: #002040;
+    --focus: #7fd6f6;
+    --glow: #40c0f0;
+    --good: #80ba27;
+    --good-bg: #22413d;
+    --mid: #e4a519;
+    --mid-bg: #363d3a;
+    --bad: #ff8f85;
+    --bad-bg: #42273c;
+    --band: #002a58;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
   }
 }
@@ -48,12 +65,12 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  font: 16px/1.4 var(--font);
+  padding-top: env(safe-area-inset-top);
   max-width: 100%;
   overflow-x: clip; /* Netz: nichts darf die Seite breiter als den Bildschirm machen */
 }
-main { max-width: 640px; min-width: 0; margin: 0 auto; padding: 14px 14px 40px; }
+main { max-width: 640px; min-width: 0; margin: 0 auto; padding: 14px calc(14px + env(safe-area-inset-right)) 40px calc(14px + env(safe-area-inset-left)); }
 button, input, summary { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -61,7 +78,7 @@ button { cursor: pointer; }
 [hidden] { display: none !important; }
 
 .top { padding: 6px 4px 14px; }
-.top h1 { margin: 0; font-size: 26px; line-height: 1.15; letter-spacing: -0.01em; }
+.top h1 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 700; color: var(--ink); }  /* Headline fett, linksbuendig, keine Versalien (Handbuch S. 19) */
 .top p { margin: 4px 0 0; color: var(--mute); font-size: 14px; }
 
 .card { position: relative; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
@@ -80,7 +97,7 @@ button { cursor: pointer; }
   text-overflow: ellipsis;
 }
 .field input[type="text"]::placeholder { color: var(--mute); opacity: 1; }
-.field input[type="text"]:focus { border-color: var(--focus); background: var(--surface); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 28%, transparent); }
+.field input[type="text"]:focus { border-color: var(--focus); background: var(--surface); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--glow) 55%, transparent); }
 .field:has(.locate) input[type="text"] { padding-right: 90px; }
 .field:not(:has(.locate)) input[type="text"] { padding-right: 46px; }
 .mark { position: absolute; left: 16px; top: 50%; width: 14px; height: 14px; margin-top: -7px; pointer-events: none; }
@@ -306,10 +323,16 @@ div.more { cursor: default; }
 .meter .mh b { font-variant-numeric: tabular-nums; }
 .meter .bar { height: 8px; margin-top: 5px; border-radius: 4px; background: var(--line); overflow: hidden; }
 .meter .bar span { display: block; height: 100%; border-radius: 4px; background: var(--primary); }
-.meter .bar .good { background: var(--good); } .meter .bar .mid { background: #e0a21c; } .meter .bar .bad { background: var(--bad); }
+.meter .bar .good { background: var(--good-fill); } .meter .bar .mid { background: var(--mid-fill); } .meter .bar .bad { background: var(--bad-fill); }
 .meter .hint { margin-top: 3px; font-size: 12px; }
 
 .foot { margin: 18px 6px 0; font-size: 12px; color: var(--mute); }
+
+/* Hamburger Gestaltungselemente (Handbuch S. 6-8, eigene Nachzeichnung ohne Wort-Bild-Marke): Band in Dunkelblau am unteren Rand ueber die
+   ganze Breite, roter Schiffsbug links mittig auf der Oberkante, 75 % der Bandhoehe, 3,5 x so breit wie hoch, immer frei von Text. */
+.band { position: relative; height: 32px; margin-top: 8px; background: var(--band); padding-bottom: env(safe-area-inset-bottom); box-sizing: content-box; }
+.band .bow { position: absolute; left: 0; top: 4px; width: 84px; height: 24px; background: var(--mrh-rot); clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); }
+@media (min-width: 720px) { .band { height: 40px; } .band .bow { top: 5px; width: 105px; height: 30px; } }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { to { background-position: -100% 0; } }
@@ -323,7 +346,7 @@ div.more { cursor: default; }
   .trip-body { padding-left: 8px; padding-right: 8px; }
 }
 @media (max-width: 380px) {
-  main { padding-left: 10px; padding-right: 10px; }
+  main { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
   .tl { grid-template-columns: 60px 54px minmax(0, 1fr); column-gap: 4px; }
   .rt-logo .lb img { height: 18px; }
   .trip-time { font-size: 22px; }
