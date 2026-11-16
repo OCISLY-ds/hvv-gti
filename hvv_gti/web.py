@@ -27,6 +27,7 @@ from .icons import CONTENT_TYPES, IconStore
 from .dedupe import drop_ghosts, max_delay, trip_keys
 from .extensions import EXTENSIONS, Seed, extend
 from .geometry import clean
+from .planner import parse_place
 from .signals import SignalIndex
 
 log = logging.getLogger("hvv_gti.web")
@@ -40,6 +41,8 @@ SEED_SIGNALS = Path(__file__).resolve().parent.parent / "map" / "seed" / "signal
 KX_M = math.cos(math.radians(53.55)) * 111320  # Meter je Grad Laenge/Breite bei Hamburg
 KY_M = 110540
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
+LIVE_PATHS = ("/api/vehicles", "/api/journey", "/api/tracks", "/api/config")  # nur mit eingeschalteter Live-Karte
+LIVE_FILES = ("live.html", "app.js", "motion.js")
 REGIONAL_LINE = re.compile(r"^R[EB]\d")  # von den Regionalzuegen (R_BAHN) werden alle RE- und RB-Linien angezeigt
 
 
@@ -484,6 +487,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
         try:
+            if not self.app.live and (path in LIVE_PATHS or path.startswith("/tiles/")):
+                return self._json({"error": "Live-Karte ist deaktiviert"}, HTTPStatus.NOT_FOUND)
             if path == "/api/vehicles":
                 data = self.app.feed.vehicles()
                 if data is None:
@@ -511,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types, "bus": [l for l in (self.app.feed.bus.lines if self.app.feed.bus else ())]})
-            if path in ("/api/stations", "/api/departures", "/api/route"):
+            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route"):
                 return self._planner(path)
             if path == "/api/colors":
                 return self._json(self.app.icons.colors())
@@ -541,16 +546,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/stations":
                 text = arg("q")
                 return self._json({"stations": planner.stations(text) if len(text) >= 2 else []})
+            if path == "/api/places":
+                text = arg("q")[:80]
+                return self._json({"places": planner.places(text) if len(text) >= 2 else []})
             if path == "/api/departures":
                 if not station.match(arg("id")):
                     return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
                 return self._json(planner.departures(arg("id"), min(40, max(1, int(arg("n") or 20)))))
-            if not (station.match(arg("from")) and station.match(arg("to"))):
-                return self._json({"error": "ungueltige Station"}, HTTPStatus.BAD_REQUEST)
+            start, dest = parse_place(arg("from")), parse_place(arg("to"))  # Haltestellen-ID oder Adresse/Standort als JSON
             when = datetime.now(ZoneInfo("Europe/Berlin"))
             if arg("when"):
                 when = datetime.fromisoformat(arg("when")).replace(tzinfo=ZoneInfo("Europe/Berlin"))
-            return self._json(planner.route(arg("from"), arg("to"), when, arg("arrive") == "1"))
+            return self._json(planner.route(start, dest, when, arg("arrive") == "1"))
         except ValueError:
             return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
         except GtiAuthError:
@@ -575,6 +582,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _static(self, path: str) -> None:
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
+        if not self.app.live and rel in LIVE_FILES:
+            return self._send(404, b"Live-Karte ist deaktiviert", "text/plain")
         root = self.app.static_dir.resolve()
         target = (root / rel).resolve()
         if root not in target.parents and target != root:
@@ -670,8 +679,9 @@ def client_ip(peer: str, forwarded: str | None) -> str:
 
 
 class MapApp:
-    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path, planner=None, planner_rate: int = 60):
+    def __init__(self, feed: VehicleFeed, icons: IconStore, static_dir: Path, data_dir: Path, planner=None, planner_rate: int = 60, live: bool = True):
         self.feed, self.icons, self.static_dir, self.data_dir, self.planner = feed, icons, static_dir, data_dir, planner
+        self.live = live  # False: nur Routenplaner, keine Fahrzeugabrufe (getVehicleMap) fuer die Karte
         self.limiter = RateLimiter(planner_rate)
 
     def tiles_file(self) -> Path:
@@ -696,7 +706,7 @@ def serve(app: MapApp, host: str, port: int, stop: threading.Event) -> None:
     httpd.daemon_threads = True
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
-    log.info("Karte laeuft auf http://%s:%d (Daten %s)", host, port, app.data_dir)
+    log.info("%s laeuft auf http://%s:%d (Daten %s)", "Live-Karte" if app.live else "Routenplaner", host, port, app.data_dir)
     try:
         stop.wait()
     finally:

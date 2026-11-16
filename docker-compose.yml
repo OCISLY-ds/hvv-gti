@@ -16,8 +16,9 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  # Live-Karte (Port 8090): interpolierte S-/U-Bahnen, Basiskarte aus map/data/hamburg.pmtiles (map/tiles/build.sh),
-  # Linien-Logos in data/icons (werden auch in Grafana unter /public/img/hvv eingebunden).
+  # Routenplaner (Port 8090, Startseite) mit Adress-, Haltestellen- und Standortsuche, Linien-Logos in data/icons (werden auch in
+  # Grafana unter /public/img/hvv eingebunden). Die Live-Karte (interpolierte S-/U-Bahnen, Basiskarte aus map/data/hamburg.pmtiles)
+  # ist aus; einschalten mit "--live-map" im command, sie liegt dann unter /live.html.
   hvv-map:
     build:
       context: .

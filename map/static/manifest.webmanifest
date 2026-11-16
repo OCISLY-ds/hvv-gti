@@ -1,0 +1,12 @@
+{
+  "name": "HVV Routenplaner",
+  "short_name": "Routenplaner",
+  "description": "Verbindungen im HVV mit Echtzeit und gemessener Zuverlässigkeit, auch von und zu Adressen.",
+  "lang": "de",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1320",
+  "theme_color": "#0a4fb8",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

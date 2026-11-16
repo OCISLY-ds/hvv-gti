@@ -246,5 +246,76 @@ class GtiPlannerTests(unittest.TestCase):
             self.assertEqual((sent["start"]["id"], sent["timeIsDeparture"], sent["realtime"]), ("Master:85950", True, "REALTIME"))
 
 
+ADDRESS_RESULTS = [
+    {"id": "Master:80932", "type": "STATION", "name": "Elbphilharmonie", "city": "Hamburg", "combinedName": "Elbphilharmonie", "coordinate": {"x": 9.986437, "y": 53.540339}},
+    {"id": "25636", "type": "ADDRESS", "name": "Leuschnerstraße 12", "city": "Hamburg", "combinedName": "Leuschnerstraße 12, Hamburg", "coordinate": {"x": 10.207964, "y": 53.497196}},
+    {"id": "25636", "type": "ADDRESS", "name": "Leuschnerstraße 12", "city": "Hamburg", "combinedName": "doppelt", "coordinate": {"x": 10.207964, "y": 53.497196}},
+    {"id": "205021", "type": "POI", "name": "Planten un Blomen", "city": "Hamburg", "combinedName": "Planten un Blomen", "coordinate": {"x": 9.981223, "y": 53.562073}},
+    {"id": "9", "type": "ADDRESS", "name": "Ohne Koordinate", "city": "Hamburg"},
+    {"id": "10", "type": "COORDINATE", "name": "Koordinate"},
+]
+
+
+class PlaceTests(unittest.TestCase):
+    def test_parse_place_keeps_plain_station_ids_and_checks_json_places(self):
+        self.assertEqual(planner.parse_place("Master:9910950"), {"id": "Master:9910950", "type": "STATION"})
+        address = planner.parse_place(json.dumps({"type": "ADDRESS", "id": "25636", "name": "Leuschnerstraße 12", "city": "Hamburg", "x": 10.2, "y": 53.49}, ensure_ascii=False))
+        self.assertEqual(address, {"type": "ADDRESS", "id": "25636", "name": "Leuschnerstraße 12", "city": "Hamburg", "coordinate": {"x": 10.2, "y": 53.49}})
+        here = planner.parse_place(json.dumps({"type": "COORDINATE", "x": 10.0, "y": 53.5}))
+        self.assertEqual(here, {"type": "COORDINATE", "name": "Mein Standort", "coordinate": {"x": 10.0, "y": 53.5}})
+
+    def test_parse_place_rejects_nonsense(self):
+        bad = [
+            "", "{", "[]", "a b",
+            json.dumps({"type": "WALL", "x": 10, "y": 53}),
+            json.dumps({"type": "ADDRESS", "name": "x"}),  # ohne Koordinate
+            json.dumps({"type": "ADDRESS", "name": "x", "x": "abc", "y": 53}),
+            json.dumps({"type": "ADDRESS", "name": "x", "x": 100, "y": 53}),  # ausserhalb Europas
+            json.dumps({"type": "ADDRESS", "name": "x" * 500, "x": 10, "y": 53}),
+            json.dumps({"type": "ADDRESS", "id": "../etc", "name": "x", "x": 10, "y": 53}),
+            json.dumps({"type": "ADDRESS", "name": 5, "x": 10, "y": 53}),
+            json.dumps({"type": "STATION", "name": "ohne id"}),
+        ]
+        for raw in bad:
+            with self.assertRaises(ValueError, msg=raw):
+                planner.parse_place(raw)
+
+    def test_places_returns_stations_addresses_and_pois_once_and_caches(self):
+        with FakeGti(responses={"checkName": {"returnCode": "OK", "results": ADDRESS_RESULTS}}) as gti:
+            p = Planner(client_for(gti), Reliability(None))
+            found = p.places("Leuschnerstraße 12")
+            self.assertEqual([(x["type"], x["id"]) for x in found], [("STATION", "Master:80932"), ("ADDRESS", "25636"), ("POI", "205021")])
+            self.assertEqual(found[1]["label"], "Leuschnerstraße 12, Hamburg")
+            self.assertEqual((found[1]["x"], found[1]["y"]), (10.207964, 53.497196))
+            sent = [body for path, body, _ in gti.requests if path.endswith("checkName")]
+            self.assertEqual(sent[0]["theName"], {"name": "Leuschnerstraße 12", "type": "UNKNOWN"})
+            p.places("  leuschnerstraße   12 ")  # gleiche Eingabe in anderer Schreibweise: aus dem Zwischenspeicher
+            self.assertEqual(len([1 for path, _, _ in gti.requests if path.endswith("checkName")]), 1)
+
+    def test_route_sends_addresses_and_locations_as_full_places(self):
+        responses = {"getRoute": {"returnCode": "OK", "realtimeSchedules": [SCHEDULE]}}
+        start = planner.parse_place(json.dumps({"type": "ADDRESS", "id": "25636", "name": "Leuschnerstraße 12", "city": "Hamburg", "x": 10.2, "y": 53.49}, ensure_ascii=False))
+        here = planner.parse_place(json.dumps({"type": "COORDINATE", "x": 10.0, "y": 53.5}))
+        with FakeGti(responses=responses) as gti:
+            p = Planner(client_for(gti), Reliability(None))
+            p.route(start, "Master:2", datetime.now(TZ))
+            p.route("Master:2", here, datetime.now(TZ), arrive=True)
+            first, second = [body for path, body, _ in gti.requests if path.endswith("getRoute")]
+        self.assertEqual(first["start"], start)
+        self.assertEqual(first["dest"], {"id": "Master:2", "type": "STATION"})
+        self.assertEqual(second["dest"]["type"], "COORDINATE")
+        self.assertFalse(second["timeIsDeparture"])
+
+    def test_footpaths_to_and_from_addresses_are_walk_legs(self):
+        schedule = {
+            "scheduleElements": [
+                {"from": {"name": "Leuschnerstraße 12", "type": "ADDRESS", "depTime": {"date": "16.11.2026", "time": "13:52"}}, "to": {"name": "Sanmannreihe", "arrTime": {"date": "16.11.2026", "time": "13:57"}}, "line": {"name": "Fußweg", "type": {"simpleType": "FOOTPATH"}}},
+                {"from": {"name": "Sanmannreihe", "id": "x", "depTime": {"date": "16.11.2026", "time": "13:58"}}, "to": {"name": "Bf. Bergedorf", "id": "y", "arrTime": {"date": "16.11.2026", "time": "14:05"}}, "line": {"name": "234", "direction": "Bergedorf", "type": {"simpleType": "BUS"}}},
+            ]
+        }
+        legs = normalize_route(schedule)
+        self.assertEqual([(l["line"], l.get("walkMin")) for l in legs], [(None, 5), ("234", None)])
+
+
 if __name__ == "__main__":
     unittest.main()

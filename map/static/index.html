@@ -3,41 +3,69 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#16202e">
-<title>HVV Live-Karte</title>
-<link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="style.css">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#eef1f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1320" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Routenplaner">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>HVV Routenplaner</title>
+<link rel="stylesheet" href="route.css">
 </head>
 <body>
-<div id="map"></div>
-<aside id="panel" class="collapsed">
-  <header id="phead">
-    <div><h1>HVV Live-Karte</h1><div id="status">lade ...</div></div>
-    <button id="ptoggle" type="button" aria-expanded="false" aria-controls="pbody" title="Linien ein-/ausblenden"><span class="chev"></span></button>
+<main>
+  <header class="top">
+    <h1>Routenplaner</h1>
+    <p>Hamburger Verkehrsverbund · mit Echtzeit und Zuverlässigkeit</p>
   </header>
-  <div id="pbody">
-    <div id="cats"></div>
-    <button id="open-route" type="button" class="btn">Routenplaner</button>
-    <label id="btoggle"><input type="checkbox" id="blocks"> Signalblöcke anzeigen</label>
-    <div id="legend"></div>
-  </div>
-</aside>
-<aside id="route" hidden>
-  <header><b>Routenplaner</b><button id="pl-close" type="button" aria-label="Schließen">×</button></header>
-  <div class="form">
-    <input id="pl-from" list="pl-from-list" placeholder="Start (Haltestelle)" autocomplete="off"><datalist id="pl-from-list"></datalist>
-    <button id="pl-swap" type="button" title="Start und Ziel tauschen" aria-label="Tauschen">⇅</button>
-    <input id="pl-to" list="pl-to-list" placeholder="Ziel (Haltestelle)" autocomplete="off"><datalist id="pl-to-list"></datalist>
-    <div class="when"><select id="pl-mode"><option value="0">Abfahrt</option><option value="1">Ankunft</option></select><input id="pl-when" type="datetime-local"></div>
-    <label class="mint" title="Mindestzeit zwischen Ankunft und Abfahrt (inkl. Fußweg). 0 = nur der Fahrplan: wer genau so viel Verspätung hat, wie Reserve bleibt, verpasst den Anschluss."><span>Umsteigezeit <b id="pl-min-val"></b></span><input id="pl-min" type="range" min="0" max="5" step="1" value="0"></label>
-    <button id="pl-go" type="button" class="btn go">Verbindungen suchen</button>
-  </div>
-  <div id="pl-result"></div>
-</aside>
-<script src="vendor/maplibre-gl.js"></script>
-<script src="vendor/pmtiles.js"></script>
-<script src="motion.js"></script>
-<script src="planner.js"></script>
-<script src="app.js"></script>
+
+  <form id="search" class="card" autocomplete="off" novalidate>
+    <div class="fields">
+      <div class="field" data-which="from">
+        <span class="mark from" aria-hidden="true"></span>
+        <label class="sr" for="in-from">Start</label>
+        <input id="in-from" type="text" role="combobox" aria-expanded="false" aria-controls="list-from" aria-autocomplete="list" aria-haspopup="listbox"
+               placeholder="Start: Adresse oder Haltestelle" enterkeyhint="next" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="search">
+        <button type="button" class="ico clear" data-act="clear" aria-label="Start löschen" hidden></button>
+        <button type="button" class="ico locate" data-act="locate" aria-label="Meinen Standort als Start verwenden"></button>
+        <ul id="list-from" class="sugg" role="listbox" aria-label="Vorschläge für den Start" hidden></ul>
+      </div>
+      <div class="field" data-which="to">
+        <span class="mark to" aria-hidden="true"></span>
+        <label class="sr" for="in-to">Ziel</label>
+        <input id="in-to" type="text" role="combobox" aria-expanded="false" aria-controls="list-to" aria-autocomplete="list" aria-haspopup="listbox"
+               placeholder="Ziel: Adresse oder Haltestelle" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="search">
+        <button type="button" class="ico clear" data-act="clear" aria-label="Ziel löschen" hidden></button>
+        <ul id="list-to" class="sugg" role="listbox" aria-label="Vorschläge für das Ziel" hidden></ul>
+      </div>
+      <button type="button" id="swap" class="swap" aria-label="Start und Ziel tauschen"></button>
+    </div>
+
+    <div class="when">
+      <div class="seg" role="radiogroup" aria-label="Zeitbezug">
+        <button type="button" role="radio" aria-checked="true" data-arrive="0">Abfahrt</button>
+        <button type="button" role="radio" aria-checked="false" data-arrive="1">Ankunft</button>
+      </div>
+      <input id="when" type="datetime-local" aria-label="Datum und Uhrzeit" required>
+      <button type="button" id="now" class="chip-btn">Jetzt</button>
+    </div>
+
+    <details class="opts">
+      <summary>Umsteigezeit: <b id="min-val"></b></summary>
+      <label class="mint">
+        <span class="hint">Mindestzeit zwischen Ankunft und Abfahrt, inklusive Fußweg. „Nur Fahrplan“ rechnet mit der geplanten Umsteigezeit: Wer genau so viel Verspätung hat, wie Reserve bleibt, verpasst den Anschluss.</span>
+        <input id="min" type="range" min="0" max="5" step="1" value="0" aria-describedby="min-val">
+      </label>
+    </details>
+
+    <button id="go" type="submit" class="primary">Verbindungen suchen</button>
+  </form>
+
+  <section id="out" aria-live="polite" aria-busy="false"></section>
+  <footer class="foot" id="foot" hidden>Wahrscheinlichkeiten aus den Verspätungen, die dieser Dienst seit Ende Oktober gemessen hat. Zeiten mit Funksymbol sind Echtzeitprognosen.</footer>
+</main>
+<script src="route.js"></script>
 </body>
 </html>

@@ -300,12 +300,93 @@ def mode_of(line: dict) -> str:
     return {"TRAIN": "Z", "BUS": "B", "SHIP": "F"}.get(simple, "?")
 
 
+STATION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,40}$")
+PLACE_TYPES = ("STATION", "ADDRESS", "POI", "COORDINATE")
+PLACE_CACHE_S = 3600
+PLACE_CACHE_MAX = 500
+LON_RANGE, LAT_RANGE = (5.0, 16.0), (47.0, 56.0)  # Deutschland samt Rand; alles andere kann der HVV-Dienst ohnehin nicht routen
+
+
+def parse_place(raw: str) -> dict:
+    """Start/Ziel aus dem Abfrageparameter: eine Haltestellen-ID oder ein JSON-Ort (Adresse, POI, Standort) wie von `places` geliefert.
+    Fuer Adressen verlangt die GTI Name, Ort und Koordinate; eine nackte ID waehlt sonst eine gleichnamige Strasse. Wirft ValueError."""
+    raw = (raw or "").strip()
+    if STATION_ID.match(raw):
+        return {"id": raw, "type": "STATION"}
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError("ungueltiger Ort") from exc
+    if not isinstance(data, dict) or data.get("type") not in PLACE_TYPES:
+        raise ValueError("ungueltiger Ort")
+    place: dict = {"type": data["type"]}
+    for key, limit in (("id", 40), ("name", 120), ("city", 80)):
+        value = data.get(key)
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str) or len(value) > limit or (key == "id" and not STATION_ID.match(value)):
+            raise ValueError("ungueltiger Ort")
+        place[key] = value
+    try:
+        x, y = float(data["x"]), float(data["y"])
+    except (KeyError, TypeError, ValueError) as exc:
+        if place["type"] != "STATION":
+            raise ValueError("ungueltiger Ort") from exc
+    else:
+        if not (LON_RANGE[0] <= x <= LON_RANGE[1] and LAT_RANGE[0] <= y <= LAT_RANGE[1]):
+            raise ValueError("ungueltiger Ort")
+        place["coordinate"] = {"x": x, "y": y}
+    if place["type"] == "STATION" and "id" not in place:
+        raise ValueError("ungueltiger Ort")
+    if place["type"] == "COORDINATE":
+        place.pop("id", None)
+        place.setdefault("name", "Mein Standort")
+    return place
+
+
 class Planner:
     def __init__(self, client: GtiClient, reliability: Reliability):
         self.client = client
         self.reliability = reliability
         self._departures: dict[str, tuple[float, dict]] = {}
+        self._places: dict[str, tuple[float, list[dict]]] = {}
         self._lock = threading.Lock()
+
+    def places(self, query: str, limit: int = 8) -> list[dict]:
+        """Haltestellen, Adressen und Sehenswuerdigkeiten zu einer Eingabe (z. B. "Bergedorfer Str. 5"); das Ergebnis geht unveraendert
+        als Start/Ziel zurueck an `route`. Antworten werden eine Stunde gemerkt: Tippen soll das GTI-Konto nicht aufbrauchen."""
+        key = " ".join(query.lower().split())
+        with self._lock:
+            hit = self._places.get(key)
+            if hit and time.monotonic() - hit[0] < PLACE_CACHE_S:
+                return hit[1]
+        out, seen = [], set()
+        for item in self.client.check_name(query, limit * 2, kind="UNKNOWN"):
+            kind = item.get("type")
+            coordinate = item.get("coordinate") or {}
+            if kind not in ("STATION", "ADDRESS", "POI") or not item.get("id") or (item.get("id"), kind) in seen:
+                continue
+            if kind != "STATION" and "x" not in coordinate:
+                continue  # ohne Koordinate laesst sich eine Adresse nicht routen
+            seen.add((item["id"], kind))
+            out.append(
+                {
+                    "id": item["id"],
+                    "type": kind,
+                    "name": item.get("name") or item.get("combinedName"),
+                    "city": item.get("city"),
+                    "label": item.get("combinedName") or item.get("name"),
+                    "x": coordinate.get("x"),
+                    "y": coordinate.get("y"),
+                }
+            )
+            if len(out) >= limit:
+                break
+        with self._lock:
+            if len(self._places) >= PLACE_CACHE_MAX:
+                self._places.clear()
+            self._places[key] = (time.monotonic(), out)
+        return out
 
     def stations(self, query: str, limit: int = 8) -> list[dict]:
         out = []
@@ -354,13 +435,15 @@ class Planner:
             self._departures[key] = (time.monotonic(), data)
         return data
 
-    def route(self, start_id: str, dest_id: str, when: datetime, arrive: bool = False, count: int = 3) -> dict:
+    def route(self, start: str | dict, dest: str | dict, when: datetime, arrive: bool = False, count: int = 3) -> dict:
+        """`start`/`dest`: Haltestellen-ID oder Ort (`parse_place`)."""
         local = when.astimezone(TZ)
+        as_place = lambda p: {"id": p, "type": "STATION"} if isinstance(p, str) else p
         response = self.client.post(
             "getRoute",
             {
-                "start": {"id": start_id, "type": "STATION"},
-                "dest": {"id": dest_id, "type": "STATION"},
+                "start": as_place(start),
+                "dest": as_place(dest),
                 "time": {"date": local.strftime("%d.%m.%Y"), "time": local.strftime("%H:%M")},
                 "timeIsDeparture": not arrive,
                 "schedulesBefore": count - 1 if arrive else 0,

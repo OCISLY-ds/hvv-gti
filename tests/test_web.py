@@ -327,5 +327,76 @@ class VehicleFeedTest(unittest.TestCase):
             self.assertEqual(client.calls, 3)  # ein Abruf fuer die Karte, je einer fuer die ergaenzten Abschnitte (S5 Dollern - Stade) und Bus 5
 
 
+class PlannerOnlyServerTest(unittest.TestCase):
+    """Ohne --live-map liefert der Server Routenplaner und Orte, aber keine Fahrzeugdaten und keine Karte."""
+
+    def _serve(self, live):
+        import threading
+        from urllib.request import urlopen  # noqa: F401  (nur zur Klarheit: der Test nutzt urllib unten)
+
+        from .fakes import FakeGti
+        from .test_integration import client_for
+        from hvv_gti.planner import Planner, Reliability
+
+        gti = FakeGti(responses={
+            "checkName": {"returnCode": "OK", "results": [{"id": "25636", "type": "ADDRESS", "name": "Leuschnerstraße 12", "city": "Hamburg", "combinedName": "Leuschnerstraße 12, Hamburg", "coordinate": {"x": 10.2, "y": 53.49}}]},
+            "getRoute": {"returnCode": "OK", "realtimeSchedules": []},
+        })
+        gti.__enter__()
+        self.addCleanup(gti.__exit__, None, None, None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        client = client_for(gti)
+        feed = web.VehicleFeed(FakeClient({"journeys": []}), Path(tmp.name))
+        static = Path(tmp.name) / "static"
+        static.mkdir()
+        for name in ("index.html", "live.html", "app.js"):
+            (static / name).write_text(name)
+        app = web.MapApp(feed, icons.IconStore(Path(tmp.name) / "icons", client), static, Path(tmp.name), Planner(client, Reliability(None)), 100, live=live)
+        stop = threading.Event()
+        httpd = web.QuietServer(("127.0.0.1", 0), type("H", (web.Handler,), {"app": app}))
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (httpd.shutdown(), httpd.server_close()))
+        return f"http://127.0.0.1:{httpd.server_address[1]}", gti, feed
+
+    def _get(self, base, path):
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(base + path, timeout=5) as r:
+                return r.status, r.read().decode()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read().decode()
+
+    def test_live_map_is_off_without_the_flag_but_the_planner_works(self):
+        base, gti, feed = self._serve(live=False)
+        for path in ("/api/vehicles", "/api/journey?id=t1&m=S", "/api/tracks", "/api/config", "/live.html", "/app.js", "/tiles/hamburg.pmtiles"):
+            self.assertEqual(self._get(base, path)[0], 404, path)
+        self.assertEqual(self._get(base, "/")[1], "index.html")
+        status, body = self._get(base, "/api/places?q=Leuschner")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["places"][0]["type"], "ADDRESS")
+        self.assertEqual([path for path, _, _ in gti.requests if "getVehicleMap" in path], [])
+
+    def test_live_map_can_be_switched_on(self):
+        base, _, _ = self._serve(live=True)
+        self.assertEqual(self._get(base, "/live.html"), (200, "live.html"))
+
+    def test_route_accepts_a_json_address_and_rejects_garbage(self):
+        import urllib.parse
+
+        base, gti, _ = self._serve(live=False)
+        place = json.dumps({"type": "ADDRESS", "id": "25636", "name": "Leuschnerstraße 12", "city": "Hamburg", "x": 10.2, "y": 53.49}, ensure_ascii=False)
+        status, _ = self._get(base, "/api/route?" + urllib.parse.urlencode({"from": place, "to": "Master:2", "when": "2026-11-16T14:30"}))
+        self.assertEqual(status, 200)
+        sent = [body for path, body, _ in gti.requests if path.endswith("getRoute")][0]
+        self.assertEqual((sent["start"]["type"], sent["start"]["coordinate"]), ("ADDRESS", {"x": 10.2, "y": 53.49}))
+        for bad in ("nonsense here", json.dumps({"type": "ADDRESS", "x": 1, "y": 1, "name": "weit weg"})):
+            status, _ = self._get(base, "/api/route?" + urllib.parse.urlencode({"from": bad, "to": "Master:2"}))
+            self.assertEqual(status, 400, bad)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -151,9 +151,10 @@ class GtiClient:
         """Verbindungstest: liefert z. B. den Fahrplanzeitraum."""
         return self.post("init", {})
 
-    def check_name(self, name: str, max_list: int = 10) -> list[dict]:
-        """Haltestellen zu einem Namen suchen (liefert Name und ID)."""
-        data = self.post("checkName", {"theName": {"name": name, "type": "STATION"}, "maxList": max_list})
+    def check_name(self, name: str, max_list: int = 10, kind: str = "STATION") -> list[dict]:
+        """Orte zu einem Namen suchen (liefert Name, ID, Typ, Koordinate). `kind` STATION sucht Haltestellen, UNKNOWN zusaetzlich
+        Adressen und Sehenswuerdigkeiten (POI)."""
+        data = self.post("checkName", {"theName": {"name": name, "type": kind}, "maxList": max_list})
         return data.get("results", [])
 
     def departure_list(

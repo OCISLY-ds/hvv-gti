@@ -137,9 +137,9 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
     planner = Planner(client, Reliability(reader))
     icons = IconStore(args.icons_dir, client)
-    app = web.MapApp(feed, icons, Path(args.static_dir), data_dir, planner, args.planner_rate)
+    app = web.MapApp(feed, icons, Path(args.static_dir), data_dir, planner, args.planner_rate, live=args.live_map)
     # Frischer Host: Gleise und Linienlogos (daraus die Linienfarben) im Hintergrund nachholen, die Karte laeuft sofort
-    if args.learn_span and not feed.tracks:
+    if args.live_map and args.learn_span and not feed.tracks:
         _background("Gleise vorlernen", feed.learn, args.learn_span)
     if not any(Path(args.icons_dir).glob("*.svg")):
         _background("Linienlogos laden", icons.prefetch)
@@ -188,12 +188,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--formats", default="svg", help="svg,png")
     p.set_defaults(func=cmd_icons)
 
-    p = sub.add_parser("serve-map", help="Live-Karte mit interpolierten S-/U-Bahnen ausliefern")
+    p = sub.add_parser("serve-map", help="Routenplaner (und mit --live-map die Live-Karte) ausliefern")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=8090)
     p.add_argument("--bbox", default="8.60,53.20,10.60,53.95", help="lon1,lat1,lon2,lat2 (Standard reicht bis Cuxhaven fuer den RE5 und deckt die X-Busse im Umland ab)")
     p.add_argument("--refresh", type=float, default=30.0, help="Sekunden zwischen GTI-Abfragen")
     p.add_argument("--window", type=int, default=300, help="Vorausschau in Sekunden")
+    p.add_argument("--live-map", action="store_true", help="die Live-Karte (live.html) einschalten; ohne bleibt nur der Routenplaner und es gibt keine Fahrzeugabrufe")
     p.add_argument("--no-xbus", action="store_true", help="die X-Busse (Xpressbus) nicht abfragen und nicht auf der Karte anbieten")
     p.add_argument("--learn-span", type=int, default=5400, help="beim ersten Start ohne tracks.json Gleise aus +-N Sekunden um jetzt vorlernen (0 = aus)")
     p.add_argument("--planner-rate", type=int, default=60, help="Abfahrten/Routen/Stationssuche je Client-IP und Minute (0 = unbegrenzt)")
