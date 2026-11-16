@@ -1,0 +1,26 @@
+http:
+  routers:
+    planner:
+      rule: Host(`hvv-api.duckdns.org`)
+      entryPoints: [tls80, websecure, p12140, p12141]
+      service: planner
+      middlewares: [secure-headers]
+      tls:
+        certResolver: duckdns
+        domains:
+          - main: hvv-api.duckdns.org
+  services:
+    planner:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:8090
+  middlewares:
+    secure-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        referrerPolicy: same-origin
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12

@@ -1,0 +1,31 @@
+# HTTPS-Vorsatz (Traefik) fuer den Routenplaner unter https://hvv-api.duckdns.org:12140
+# Die Fritzbox gibt von aussen nur die Ports 12140-12159 frei (kein 80/443): das Zertifikat kommt per DNS-Abfrage (DNS-01) bei
+# DuckDNS, dafuer ist kein offener Port noetig. Die Eintrittspunkte lauschen alle auf TLS, egal auf welchen Pi-Port die Fritzbox
+# 12140/12141 weiterleitet (80, 443, 12140 oder 12141).
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+log:
+  level: INFO
+entryPoints:
+  tls80:
+    address: ":80"
+  websecure:
+    address: ":443"
+  p12140:
+    address: ":12140"
+  p12141:
+    address: ":12141"
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml
+certificatesResolvers:
+  duckdns:
+    acme:
+      storage: /acme/acme.json
+      dnsChallenge:
+        provider: duckdns
+        delayBeforeCheck: 30s
+        resolvers:
+          - 1.1.1.1:53
+          - 8.8.8.8:53
