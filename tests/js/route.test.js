@@ -10,7 +10,7 @@ const vm = require("node:vm");
 const src = fs.readFileSync(path.join(__dirname, "../../map/static/route.js"), "utf8");
 const sandbox = {};
 vm.runInNewContext(src, sandbox);
-const { ageText } = sandbox.HvvRoute;
+const { ageText, dur } = sandbox.HvvRoute;
 
 test("the age counts seconds, then minutes and seconds", () => {
   assert.equal(ageText(0), "vor 0 s");
@@ -70,4 +70,13 @@ test("line badges keep their aspect ratio", () => {
   const css = fs.readFileSync(path.join(__dirname, "../../map/static/route.css"), "utf8");
   assert.match(css, /\.rt-logo \.lb img \{[^}]*width: auto; max-width: none/);
   assert.match(css, /\.lb img \{[^}]*width: auto; max-width: none/);
+});
+
+test("durations over an hour are written as hours and minutes", () => {
+  assert.deepEqual([0, 5, 59, 60, 81, 121, 125, 180].map(dur), ["0 min", "5 min", "59 min", "1 h", "1 h 21 min", "2 h 1 min", "2 h 5 min", "3 h"]);
+});
+
+test("the cancellation hint appears only when a leg lacks data", () => {
+  const js = fs.readFileSync(path.join(__dirname, "../../map/static/route.js"), "utf8");
+  assert.match(js, /const hint = missing\.length \? `Gemessen für[^`]*` : "";/);
 });

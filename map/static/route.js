@@ -11,6 +11,12 @@
   };
   const hhmm = (ts) => new Date(ts * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   const num = (v) => String(v).replace(".", ",");
+  // Dauer: 81 min -> "1 h 21 min", 120 min -> "2 h"
+  const dur = (min) => {
+    const m = Math.round(min);
+    if (m < 60) return `${m} min`;
+    return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+  };
   const pct = (v) => `${num(v)} %`;
   const tone = (v) => (v >= 90 ? "good" : v >= 75 ? "mid" : "bad");
 
@@ -417,20 +423,24 @@
     if (leg.cancelled) body.append(node("div", "warn", "Diese Fahrt fällt aus."));
 
     const details = node("div", "details");
-    details.hidden = true;
+    const stopsKey = `${ctx && ctx.route ? ctx.route.key : ""}:${legIndex}`;
+    details.hidden = !state.stopsOpen.has(stopsKey); // bleibt beim Neuladen der Liste so, wie du es gelassen hast
     const hasDetails = (leg.stops && leg.stops.length) || (leg.notices && leg.notices.length) || leg.vehicle || leg.carrier;
-    const ride = known(leg.durationMin) ? ` (${leg.durationMin} min)` : "";
+    const ride = known(leg.durationMin) ? ` (${dur(leg.durationMin)})` : "";
     const label = leg.stopCount ? `Fahre ${leg.stopCount} Haltestelle${leg.stopCount === 1 ? "" : "n"}${ride}` : `Fahrt${ride}`;
     const toggle = node(hasDetails ? "button" : "div", "more");
     toggle.append(node("span", "", label));
     if (hasDetails) {
       toggle.type = "button";
-      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-expanded", String(!details.hidden));
+      toggle.classList.toggle("open", !details.hidden);
       toggle.append(icon("chevron"));
       toggle.addEventListener("click", () => {
         details.hidden = !details.hidden;
         toggle.setAttribute("aria-expanded", String(!details.hidden));
         toggle.classList.toggle("open", !details.hidden);
+        if (details.hidden) state.stopsOpen.delete(stopsKey);
+        else state.stopsOpen.add(stopsKey);
       });
     }
     body.append(toggle);
@@ -467,8 +477,8 @@
     const row = node("div", "tl xfer");
     const body = node("div", "body");
     const parts = [];
-    if (walk) parts.push(`${walk} min zu Fuß`);
-    if (tr.waitMin - walk > 0) parts.push(`${tr.waitMin - walk} min warten`);
+    if (walk) parts.push(`${dur(walk)} zu Fuß`);
+    if (tr.waitMin - walk > 0) parts.push(`${dur(tr.waitMin - walk)} warten`);
     if (!parts.length) parts.push("keine Wartezeit");
     const text = node("div", "xtext");
     text.append(icon("swapStop"), node("span", "", `Steige um (${parts.join(", ")})`));
@@ -484,7 +494,7 @@
     if (feeder && next && known(feeder.arrDelayMin)) {
       const live = tr.waitMin + (next.depDelayMin || 0) - feeder.arrDelayMin - Math.max(walk, minTransfer);
       if (feeder.arrDelayMin || next.depDelayMin || live <= 0) {
-        chips.append(node("span", "pill " + (live <= 0 ? "bad" : live <= 1 ? "mid" : "good"), live <= 0 ? "Nach aktueller Prognose verpasst" : `Aktuell ${live} min Reserve`));
+        chips.append(node("span", "pill " + (live <= 0 ? "bad" : live <= 1 ? "mid" : "good"), live <= 0 ? "Nach aktueller Prognose verpasst" : `Aktuell ${dur(live)} Reserve`));
       }
     }
     if (chips.childElementCount) body.append(chips);
@@ -497,7 +507,7 @@
     const row = node("div", "tl xfer");
     const body = node("div", "body");
     const text = node("div", "xtext");
-    text.append(icon("walk"), node("span", "", `Gehe ${leg.walkMin} min zu Fuß`));
+    text.append(icon("walk"), node("span", "", `Gehe ${dur(leg.walkMin)} zu Fuß`));
     body.append(text);
     const searched = state.last || {};
     const from = leg.from.name || (isFirst ? searched.from : searched.to) || "Start";
@@ -531,7 +541,8 @@
     }
     if (rel.cancelPct !== undefined) {
       const missing = rel.cancelMissing || [];
-      const hint = missing.length ? `Gemessen für ${rel.cancelCoverage}. Für ${missing.join(", ")} erfasst der Dienst keine Ausfälle.` : `Gemessen für ${rel.cancelCoverage}.`;
+      // Hinweis nur, wenn Abschnitte fehlen; bei "3 von 3" waere er ueberfluessig
+      const hint = missing.length ? `Gemessen für ${rel.cancelCoverage}. Für ${missing.join(", ")} erfasst der Dienst keine Ausfälle.` : "";
       box.append(meter("Ausfallrisiko", rel.cancelPct, hint, true));
     }
     else if (!rel.unavailable) box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
@@ -543,7 +554,7 @@
     head.type = "button";
     const dep = r.realDep || r.plannedDep, arr = r.realArr || r.plannedArr;
     const top = node("div", "trip-top");
-    top.append(node("span", "trip-time", `${hhmm(dep)} → ${hhmm(arr)}`), node("span", "trip-dur", `${r.minutes} min`));
+    top.append(node("span", "trip-time", `${hhmm(dep)} → ${hhmm(arr)}`), node("span", "trip-dur", dur(r.minutes)));
     top.append(icon("chevron", "trip-chev"));
     head.append(top);
 
@@ -555,7 +566,7 @@
       if (leg.line) mid.append(modeIcon(leg), badge(leg.line, leg.mode));
       else {
         const w = node("span", "walk-chip");
-        w.append(icon("walk"), document.createTextNode(`${leg.walkMin} min`));
+        w.append(icon("walk"), document.createTextNode(dur(leg.walkMin)));
         mid.append(w);
       }
     });
@@ -606,7 +617,7 @@
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), altError: null, rerouting: false };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), stopsOpen: new Set(), sig: "", altError: null, rerouting: false };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -659,7 +670,7 @@
     toggle.type = "button";
     toggle.setAttribute("aria-expanded", String(open));
     toggle.classList.toggle("open", open);
-    toggle.append(node("span", "", `Auch in ${joinDe(others.map((a) => `${minutesFromNow(a.real)} min`))}`), icon("chevron"));
+    toggle.append(node("span", "", `Auch in ${joinDe(others.map((a) => dur(minutesFromNow(a.real))))}`), icon("chevron"));
     const rows = node("div", "alt-list");
     rows.hidden = !open;
     toggle.addEventListener("click", () => {
@@ -673,7 +684,7 @@
       const b = node("button", "alt-item");
       b.type = "button";
       const t = node("span", "alt-t", hhmm(alt.real));
-      const meta = node("span", "alt-m", alt.delayMin ? `Plan ${hhmm(alt.planned)} · ${signed(alt.delayMin)} min` : `in ${minutesFromNow(alt.real)} min`);
+      const meta = node("span", "alt-m", alt.delayMin ? `Plan ${hhmm(alt.planned)} · ${signed(alt.delayMin)} min` : `in ${dur(minutesFromNow(alt.real))}`);
       const go = node("span", "alt-go", "Wählen");
       b.append(t, meta, go);
       b.setAttribute("aria-label", `Abfahrt um ${hhmm(alt.real)} Uhr wählen`);
@@ -758,6 +769,8 @@
 
   // ---- Alter der Daten: "vor 12 s", jede Sekunde neu gezaehlt ----
 
+  // Fingerabdruck der Verbindungen ohne die Zuverlaessigkeit (die wird bei jedem Abruf neu gewuerfelt und schwankt um Zehntelprozent)
+  const sigOf = (routes) => JSON.stringify(routes, (k, v) => (k === "reliability" || k === "catchByMin" ? undefined : v));
   const AUTO_S = 30; // alle 30 s von selbst neu abrufen, solange die Seite sichtbar ist (die GTI-Abrufe sind begrenzt)
   const ageText = (s) => `vor ${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`}`;
   const ageSeconds = () => Math.max(0, Math.floor((Date.now() - state.fetchedAt) / 1000));
@@ -884,7 +897,19 @@
         const fresh = { ...data, from: state.last.from, to: state.last.to };
         fresh.routes.forEach((r) => (r.key = routeKey(r)));
         const previous = state.data.routes;
+        const sig = sigOf(fresh.routes);
         state.last.params = params.toString();
+        if (sig === state.sig && !previous.some((r) => r.custom) && !state.refreshError) {
+          // nichts hat sich geaendert: Liste stehen lassen (kein Zuklappen oder Springen), nur der Stand wird neu
+          state.fetchedAt = Date.now();
+          const btn = document.querySelector(".age .refresh");
+          if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("busy");
+          }
+          return tickAge();
+        }
+        state.sig = sig;
         await reapplyPicks(previous, fresh);
         state.data = fresh;
         state.fetchedAt = Date.now();
@@ -906,7 +931,9 @@
       const data = await getJson(`/api/route?${params}`, signal);
       state.data = { ...data, from: from.label, to: to.label };
       state.data.routes.forEach((r) => (r.key = routeKey(r)));
+      state.sig = sigOf(state.data.routes);
       state.altOpen.clear();
+      state.stopsOpen.clear();
       state.altError = null;
       state.last = { params: params.toString(), from: from.label, to: to.label };
       state.fetchedAt = Date.now();
@@ -980,5 +1007,5 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
     else init();
   }
-  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText };
+  root.HvvRoute = { placeParam, lineColor, tone, delayClass, signed, minLabel, recents, ageText, dur };
 })(typeof self !== "undefined" ? self : this);
