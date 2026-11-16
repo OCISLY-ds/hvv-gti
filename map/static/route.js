@@ -47,7 +47,8 @@
     chevron: svg('<path d="M5.5 9l6.5 6.5L18.5 9"/>'),
     walk: svg('<circle cx="13" cy="4.6" r="1.8" fill="currentColor"/><path d="M9.5 21.5l1.7-6.3-2.3-2.2v-4l-1.8 2.2M13 8.5l1.7 3.2 3 .8M11.2 15.2l3.5 1.6.9 4.7M8.9 9.1l3.6-1.4c.4-.1.9.1 1 .5"/>'),
     swapStop: svg('<path d="M7 7h12M7 7l3-3M7 7l3 3M17 17H5m12 0l-3-3m3 3l-3 3"/>'),
-    live: '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M3 11a7 7 0 0 1 7-7M3 7.5A4 4 0 0 1 6.5 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" transform="translate(2 1)"/></svg>',
+    // Funksymbol fuer Echtzeit: Punkt und zwei Bogen, die nacheinander aufleuchten (CSS .live)
+    live: '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path class="w1" d="M3 8.2a4.8 4.8 0 0 1 4.8 4.8"/><path class="w2" d="M3 3.2A9.8 9.8 0 0 1 12.8 13"/></g><circle cx="3.6" cy="12.4" r="1.7" fill="currentColor"/></svg>',
   };
   const icon = (name, cls) => {
     const n = node("span", cls || "");
@@ -396,7 +397,7 @@
     const st = leg.stats;
     if (st && (st.alight || known(st.cancelRate))) {
       const bits = [];
-      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}`);
+      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
       if (known(st.cancelRate)) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
       body.append(node("div", "stat", bits.join(" · ")));
     }
@@ -583,11 +584,6 @@
     $("foot").hidden = !state.data || !state.data.routes.length;
     const data = state.data;
     if (!data) return;
-    if (data.from && data.to) {
-      const s = node("div", "summary");
-      s.append("Von ", node("b", "", data.from), " nach ", node("b", "", data.to));
-      out.append(s);
-    }
     if (state.fetchedAt) {
       out.append(ageRow());
       tickAge();

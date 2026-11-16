@@ -34,7 +34,15 @@ LOOKBACK = "-30d"
 CACHE_S = 600
 
 # Messung je Linienart (hvv_stop_event zusaetzlich fuer Ausfaelle)
-MEASUREMENTS = {"S": "hvv_network_stop", "U": "hvv_network_stop", "X": "hvv_xbus_stop", "R": "hvv_regional_stop"}
+# Busse (B): Bus 5 hat Halt fuer Halt Messwerte (hvv_bus_stop); alle anderen Buslinien (4, 234, ...) kennt nur die Abfahrtstafel
+# ihres Erfassungs-Halts (hvv_stop_event), dort gelten die Werte dann fuer die ganze Linie.
+MEASUREMENTS = {
+    "S": ("hvv_network_stop",),
+    "U": ("hvv_network_stop",),
+    "X": ("hvv_xbus_stop",),
+    "R": ("hvv_regional_stop",),
+    "B": ("hvv_bus_stop", "hvv_stop_event"),
+}
 CANCEL_MEASUREMENT = "hvv_stop_event"
 WALK_TYPES = {"CHANGE", "FOOTPATH", "BICYCLE"}  # Elemente der GTI-Route, die keine Fahrt sind
 
@@ -52,6 +60,11 @@ def line_mode(name: str | None) -> str | None:
     if re.match(r"^R[EB]\d", name):
         return "R"
     return None
+
+
+def data_mode(name: str | None) -> str | None:
+    """Art der Linie fuer die Messreihen: wie `line_mode`, zusaetzlich B fuer Buslinien (nur Ziffern, z. B. 4, 5, 234)."""
+    return line_mode(name) or ("B" if name and re.match(r"^\d{1,3}$", name) else None)
 
 
 # ---- Influx ----
@@ -163,14 +176,20 @@ class Reliability:
 
     def distribution(self, line: str, station: str, when: datetime) -> dict | None:
         """{"values": [...], "n": int, "scope": str} der Verspaetungen (s) oder None ohne Messreihe."""
-        mode = line_mode(line)
+        mode = data_mode(line)
         if self.reader is None or mode is None:
             return None
-        measurement = MEASUREMENTS[mode]
-        samples = self._cached(("d", measurement, line, station), lambda: self.reader.delays(measurement, line, station))
+
+        def collect(where: str | None) -> list[tuple[float, float]]:
+            found: list[tuple[float, float]] = []
+            for measurement in MEASUREMENTS[mode]:
+                found += self._cached(("d", measurement, line, where), lambda m=measurement: self.reader.delays(m, line, where))
+            return found
+
+        samples = collect(station)
         scope = "Halt"
         if len(samples) < MIN_SAMPLES:
-            samples = self._cached(("d", measurement, line, None), lambda: self.reader.delays(measurement, line, None))
+            samples = collect(None)
             scope = "ganze Linie"
         if not samples:
             return None
@@ -178,7 +197,7 @@ class Reliability:
         return {"values": values, "n": len(values), "scope": scope, "window": window}
 
     def cancel_rate(self, line: str) -> dict | None:
-        if self.reader is None or line_mode(line) is None:
+        if self.reader is None or data_mode(line) is None:
             return None
         found = self._cached(("c", line), lambda: self.reader.cancel_rate(line))
         return {"n": found[0], "rate": found[1]} if found else None

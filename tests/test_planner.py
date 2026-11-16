@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from hvv_gti import planner
-from hvv_gti.planner import Planner, Reliability, TZ, flux_str, line_mode, normalize_route, pick_window
+from hvv_gti.planner import Planner, Reliability, TZ, data_mode, flux_str, line_mode, normalize_route, pick_window
 
 from .fakes import FakeGti
 from .test_integration import client_for
@@ -128,6 +128,28 @@ class PlannerHelperTests(unittest.TestCase):
 
 class ReliabilityTests(unittest.TestCase):
     when = datetime(2026, 11, 7, 13, 23, tzinfo=TZ)
+
+    def test_bus_lines_have_data_too(self):
+        # Buslinien (nur Ziffern) haben Messreihen: Bus 5 je Halt (hvv_bus_stop), die uebrigen aus der Abfahrtstafel (hvv_stop_event)
+        self.assertEqual([data_mode(x) for x in ("4", "5", "234", "S7", "RE5", "X30", "A1", "S7-SEV", None)], ["B", "B", "B", "S", "R", "X", None, "S", None])
+        asked = []
+        noon = datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp()
+
+        class Stub:
+            def delays(self, measurement, line, station):
+                asked.append((measurement, line, station))
+                # Bus 4 kennt nur Rathausmarkt (Abfahrtstafel): andere Halte fallen auf die ganze Linie zurueck
+                return [(noon + i, 60.0) for i in range(60)] if measurement == "hvv_stop_event" and station in (None, "Rathausmarkt") else []
+
+            def cancel_rate(self, line):
+                return (200, 0.01)
+
+        r = Reliability(Stub(), random.Random(1))
+        dist = r.distribution("4", "Universität/Staatsbibliothek", self.when)
+        self.assertEqual((dist["n"], dist["scope"]), (60, "ganze Linie"))
+        self.assertIn(("hvv_bus_stop", "4", None), asked)
+        self.assertEqual(r.distribution("4", "Rathausmarkt", self.when)["scope"], "Halt")
+        self.assertEqual(r.cancel_rate("234"), {"n": 200, "rate": 0.01})
 
     def test_punctual_lines_give_full_reliability(self):
         r = Reliability(reader({("S1", "Wedel"): 0.0, ("S1", "Altona"): 0.0, ("S11", "Altona"): 0.0, ("S11", "Flughafen"): 0.0}), random.Random(1))
