@@ -400,6 +400,38 @@
     return row;
   }
 
+  const stamp = (ts) => new Date(ts * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " Uhr";
+
+  // Meldung zur Fahrt (Bauarbeiten, Fahrplanaenderung ...): Titel immer sichtbar, Text und Gueltigkeit auf Tipp
+  function noticeBox(info) {
+    const box = node("div", "notice");
+    box.append(node("div", "ntitle", info.summary));
+    const more = node("div", "ndetail");
+    more.hidden = true;
+    if (info.from && info.to) more.append(node("div", "nmeta", `Gültigkeit: ${stamp(info.from)} – ${stamp(info.to)}`));
+    if (info.text) more.append(node("p", "", info.text));
+    for (const link of info.links || []) {
+      const a = node("a", "", link.label);
+      a.href = link.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      more.append(a);
+    }
+    if (info.modified) more.append(node("div", "nmeta", `Letzte Änderung: ${stamp(info.modified)}`));
+    if (more.childNodes.length) {
+      const btn = node("button", "link", "Details anzeigen");
+      btn.type = "button";
+      btn.setAttribute("aria-expanded", "false");
+      btn.addEventListener("click", () => {
+        more.hidden = !more.hidden;
+        btn.textContent = more.hidden ? "Details anzeigen" : "Details ausblenden";
+        btn.setAttribute("aria-expanded", String(!more.hidden));
+      });
+      box.append(btn, more);
+    }
+    return box;
+  }
+
   function rideCard(leg, legIndex, ctx) {
     const card = node("div", "leg");
     card.style.setProperty("--c", lineColor(leg));
@@ -421,11 +453,12 @@
       ctx.alts.push({ el: alts, leg, index: legIndex });
     }
     if (leg.cancelled) body.append(node("div", "warn", "Diese Fahrt fällt aus."));
+    for (const info of leg.noticeInfo || []) body.append(noticeBox(info));
 
     const details = node("div", "details");
     const stopsKey = `${ctx && ctx.route ? ctx.route.key : ""}:${legIndex}`;
     details.hidden = !state.stopsOpen.has(stopsKey); // bleibt beim Neuladen der Liste so, wie du es gelassen hast
-    const hasDetails = (leg.stops && leg.stops.length) || (leg.notices && leg.notices.length) || leg.vehicle || leg.carrier;
+    const hasDetails = (leg.stops && leg.stops.length) || leg.vehicle || leg.carrier;
     const ride = known(leg.durationMin) ? ` (${dur(leg.durationMin)})` : "";
     const label = leg.stopCount ? `Fahre ${leg.stopCount} Haltestelle${leg.stopCount === 1 ? "" : "n"}${ride}` : `Fahrt${ride}`;
     const toggle = node(hasDetails ? "button" : "div", "more");
@@ -462,7 +495,6 @@
       if (stop.delayMin) row.append(node("span", "dm " + delayClass(stop.delayMin), signed(stop.delayMin)));
       details.append(row);
     }
-    for (const text of leg.notices || []) details.append(node("div", "note", `ⓘ ${text}`));
     body.append(details);
     mid.append(node("div", "tm"), rail, body);
     card.append(mid);
@@ -607,7 +639,7 @@
       const autos = r.custom.picks.some((pick) => pick.auto), manual = r.custom.picks.some((pick) => !pick.auto);
       if (autos) {
         const note = node("div", "custom-note auto");
-        note.append(node("span", "", `${(r.custom.reasons || []).join(" ")} Du siehst deshalb die Alternative.`));
+        note.append(node("span", "", (r.custom.reasons || []).join(" ")));
         const ignore = node("button", "link", "Prognose ignorieren");
         ignore.type = "button";
         ignore.addEventListener("click", () => ignoreForecast(ctx.ri));
@@ -836,7 +868,7 @@
 
   function reasonText(p, depart) {
     if (p.kind === "cancelled") return `Die ${p.leg.line} um ${hhmm(p.leg.dep)} ab ${p.leg.from.name} fällt aus. Stattdessen: ${p.leg.line} um ${hhmm(depart)}.`;
-    return `Den Anschluss ${p.leg.line} in ${p.station} erreichst du laut Prognose nicht: ${p.feeder.line} kommt ${dur(p.feeder.arrDelayMin)} zu spät, die Reserve beträgt nur ${dur(Math.max(0, p.base))}. Stattdessen: ${p.leg.line} um ${hhmm(depart)}.`;
+    return `Anschluss ${p.leg.line} in ${p.station} laut Prognose verpasst (${p.feeder.line} ${dur(p.feeder.arrDelayMin)} zu spät, nur ${dur(Math.max(0, p.base))} Reserve). Stattdessen: ${p.leg.line} um ${hhmm(depart)}.`;
   }
 
   async function fixRoute(route) {

@@ -98,7 +98,7 @@ test("a connection that the forecast says is missed is found with the reason", (
   const p = R.findProblem(trip(3), 0);
   assert.deepEqual([p.kind, p.index, p.station], ["missed", 1, "B"]);
   assert.equal(p.notBefore, T0 + 33 * 60 + 0); // Zubringer 30 + 3 min Verspaetung, ohne Mindestumsteigezeit
-  assert.match(R.reasonText(p, T0 + 53 * 60), /Den Anschluss S7 in B erreichst du laut Prognose nicht: S5 kommt 3 min zu spät, die Reserve beträgt nur 3 min\. Stattdessen: S7 um \d\d:\d\d\./);
+  assert.match(R.reasonText(p, T0 + 53 * 60), /Anschluss S7 in B laut Prognose verpasst \(S5 3 min zu spät, nur 3 min Reserve\)\. Stattdessen: S7 um \d\d:\d\d\./);
   assert.equal(R.findProblem(trip(1), 3).kind, "missed"); // gewaehlte Mindest-Umsteigezeit zaehlt mit
   const cancelled = trip(0);
   cancelled.legs[1].cancelled = true;

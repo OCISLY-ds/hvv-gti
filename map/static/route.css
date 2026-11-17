@@ -340,6 +340,13 @@ div.more { cursor: default; }
 .stop .tm2 { flex: none; width: 44px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--mute); }
 .stop .nm2 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .stop .dm { font-size: 13px; font-weight: 700; }
+.notice { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
+.notice .ntitle { font-weight: 600; }
+.notice button.link { margin-top: 2px; padding: 4px 0; }
+.notice .ndetail { margin-top: 4px; }
+.notice .ndetail p { margin: 4px 0; }
+.notice .ndetail a { display: block; margin: 2px 0; color: inherit; text-decoration: underline; }
+.notice .nmeta { font-size: 12px; opacity: 0.85; }
 .note { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
 .xfer .rail::before { background: none; width: 0; margin-left: 0; border-left: 4px dotted var(--mute); top: 4px; bottom: 4px; }
 .xfer .body { padding: 14px 0; }

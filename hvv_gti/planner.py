@@ -668,10 +668,12 @@ def ride_details(element: dict, line: dict, dep: float | None, arr: float | None
         stops.append({"name": stop.get("name"), "time": when, "delayMin": None if delay is None else round(delay / 60)})
     kind = line.get("type") or {}
     seen: list[str] = []
+    info: list[dict] = []
     for note in element.get("announcements") or []:
         text = (note.get("summary") or "").strip()
         if text and text not in seen:
             seen.append(text)
+            info.append(notice_info(note, text))
     return {
         "stops": stops,
         "stopCount": len(stops) + 1,
@@ -680,7 +682,29 @@ def ride_details(element: dict, line: dict, dep: float | None, arr: float | None
         "carrier": line.get("carrierNameShort") or "",
         "origin": line.get("origin") or "",
         "notices": seen[:3],
+        "noticeInfo": info[:3],
     }
+
+
+def notice_info(note: dict, summary: str) -> dict:
+    """Eine Meldung der Fahrt mit allem, was der HVV auf seiner Seite unter "Details anzeigen" zeigt."""
+    parse = lambda value: (lambda t: None if t is None else t.timestamp())(_iso(value))
+    window = (note.get("validities") or [note.get("publication") or {}])[0]
+    return {
+        "summary": summary,
+        "text": (note.get("description") or "").strip(),
+        "from": parse(window.get("begin")),
+        "to": parse(window.get("end")),
+        "modified": parse(note.get("lastModified")),
+        "links": [{"label": link.get("label") or link["url"], "url": link["url"]} for link in note.get("links") or [] if str(link.get("url", "")).startswith("https://")][:3],
+    }
+
+
+def _iso(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def annotate_transfers(legs: list[dict]) -> None:

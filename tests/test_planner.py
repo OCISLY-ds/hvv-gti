@@ -107,12 +107,21 @@ class PlannerHelperTests(unittest.TestCase):
         first = schedule["scheduleElements"][0]
         first["intermediateStops"] = [{"name": "Hauptbahnhof", "depTime": {"date": "07.11.2026", "time": "13:40"}, "depDelay": 120}]
         first["line"].update({"origin": "Wedel", "carrierNameShort": "S-Bahn", "type": {"simpleType": "TRAIN", "longInfo": "S-Bahn"}})
-        first["announcements"] = [{"summary": "Bauarbeiten"}, {"summary": "Bauarbeiten"}, {"summary": "Aufzug defekt"}]
+        first["announcements"] = [
+            {"summary": "Bauarbeiten", "description": "Gleisbau. ", "validities": [{"begin": "2026-11-02T04:00:00.000+0100", "end": "2026-11-30T04:00:00.000+0100"}],
+             "lastModified": "2026-10-26T09:21:54.776+0100", "links": [{"label": "Karte", "url": "https://example.org/k.png"}, {"label": "x", "url": "javascript:alert(1)"}]},
+            {"summary": "Bauarbeiten"},
+            {"summary": "Aufzug defekt"},
+        ]
         leg = normalize_route(schedule)[0]
         self.assertEqual(leg["stopCount"], 2)
         self.assertEqual((leg["stops"][0]["name"], leg["stops"][0]["delayMin"]), ("Hauptbahnhof", 2))
         self.assertEqual((leg["vehicle"], leg["carrier"], leg["origin"], leg["durationMin"]), ("S-Bahn", "S-Bahn", "Wedel", 32))
         self.assertEqual(leg["notices"], ["Bauarbeiten", "Aufzug defekt"])
+        info = leg["noticeInfo"][0]
+        self.assertEqual((info["summary"], info["text"], info["links"]), ("Bauarbeiten", "Gleisbau.", [{"label": "Karte", "url": "https://example.org/k.png"}]))
+        self.assertEqual((info["from"], info["to"]), (1793588400.0, 1796007600.0))
+        self.assertIsNone(leg["noticeInfo"][1]["from"])
         self.assertEqual(normalize_route(schedule)[2]["transfer"]["toStation"], "Altona")
 
     def test_pick_window_falls_back_to_all_times(self):
