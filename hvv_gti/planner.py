@@ -669,9 +669,10 @@ def ride_details(element: dict, line: dict, dep: float | None, arr: float | None
     kind = line.get("type") or {}
     seen: list[str] = []
     info: list[dict] = []
+    ride_stops = [(element.get("from") or {}).get("name"), *[s["name"] for s in stops], (element.get("to") or {}).get("name")]
     for note in element.get("announcements") or []:
         text = (note.get("summary") or "").strip()
-        if text and text not in seen:
+        if text and text not in seen and notice_applies(text, ride_stops):
             seen.append(text)
             info.append(notice_info(note, text))
     return {
@@ -684,6 +685,23 @@ def ride_details(element: dict, line: dict, dep: float | None, arr: float | None
         "notices": seen[:3],
         "noticeInfo": info[:3],
     }
+
+
+SEGMENT = re.compile(r"\bzw(?:\.|ischen)\s+(.+?)\s+(?:u\.|und)\s+(.+?)\s*$", re.I)
+
+
+def _same_stop(name: str | None, wanted: str) -> bool:
+    norm = lambda text: re.sub(r"[^\w]", "", (text or "").casefold())
+    a, b = norm(name), norm(wanted)
+    return len(a) >= 3 and len(b) >= 3 and (a.startswith(b) or b.startswith(a))
+
+
+def notice_applies(summary: str, ride_stops: list[str | None]) -> bool:
+    """Die GTI haengt Streckenmeldungen an jede Fahrt der Linie. "... zw. A u. B" gilt aber nur, wenn die Fahrt beide Orte passiert."""
+    match = SEGMENT.search(summary)
+    if not match:
+        return True
+    return all(any(_same_stop(stop, place) for stop in ride_stops) for place in match.groups())
 
 
 def notice_info(note: dict, summary: str) -> dict:

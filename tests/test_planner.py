@@ -124,6 +124,15 @@ class PlannerHelperTests(unittest.TestCase):
         self.assertIsNone(leg["noticeInfo"][1]["from"])
         self.assertEqual(normalize_route(schedule)[2]["transfer"]["toStation"], "Altona")
 
+    def test_segment_notice_only_for_rides_through_that_segment(self):
+        schedule = json.loads(json.dumps(SCHEDULE))
+        first = schedule["scheduleElements"][0]
+        first["announcements"] = [{"summary": "🚧 Fahrplanänderung zw. Bergedorf u. Aumühle"}, {"summary": "Aufzug defekt"}]
+        first["from"]["name"], first["to"]["name"] = "Bergedorf", "Hamburg Hbf"
+        self.assertEqual(normalize_route(schedule)[0]["notices"], ["Aufzug defekt"])  # faehrt nicht bis Aumuehle
+        first["intermediateStops"] = [{"name": "Aumühle", "depTime": {"date": "07.11.2026", "time": "13:40"}}]
+        self.assertEqual(len(normalize_route(schedule)[0]["notices"]), 2)
+
     def test_pick_window_falls_back_to_all_times(self):
         when = datetime(2026, 11, 7, 13, 0, tzinfo=TZ)
         night = [(datetime(2026, 11, 3, 3, 0, tzinfo=TZ).timestamp() + i, 60.0) for i in range(30)]
