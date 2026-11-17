@@ -696,12 +696,21 @@ def _same_stop(name: str | None, wanted: str) -> bool:
     return len(a) >= 3 and len(b) >= 3 and (a.startswith(b) or b.startswith(a))
 
 
+ARROW = re.compile(r"^(?:[\w/+-]{1,6}:\s*)?(.+?)\s*(?:->|→|=>)\s*(.+)$")
+
+
 def notice_applies(summary: str, ride_stops: list[str | None]) -> bool:
-    """Die GTI haengt Streckenmeldungen an jede Fahrt der Linie. "... zw. A u. B" gilt aber nur, wenn die Fahrt beide Orte passiert."""
+    """Die GTI haengt Streckenmeldungen an jede Fahrt der Linie. "... zw. A u. B" und "S7: A -> B ..." gelten aber nur,
+    wenn die Fahrt beide Orte passiert (bei "->" steht hinter B noch Text, daher zaehlen die ersten 1-3 Woerter)."""
+    passes = lambda place: any(_same_stop(stop, place) for stop in ride_stops)
     match = SEGMENT.search(summary)
-    if not match:
-        return True
-    return all(any(_same_stop(stop, place) for stop in ride_stops) for place in match.groups())
+    if match:
+        return all(passes(place) for place in match.groups())
+    arrow = ARROW.match(summary)
+    if arrow:
+        words = arrow.group(2).split()
+        return passes(arrow.group(1)) and any(passes(" ".join(words[:n])) for n in (1, 2, 3) if len(words) >= n)
+    return True
 
 
 def notice_info(note: dict, summary: str) -> dict:
