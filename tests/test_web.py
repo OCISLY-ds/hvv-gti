@@ -372,7 +372,7 @@ class PlannerOnlyServerTest(unittest.TestCase):
 
     def test_live_map_is_off_without_the_flag_but_the_planner_works(self):
         base, gti, feed = self._serve(live=False)
-        for path in ("/api/vehicles", "/api/journey?id=t1&m=S", "/api/tracks", "/api/config", "/live.html", "/app.js", "/tiles/hamburg.pmtiles"):
+        for path in ("/api/vehicles", "/api/journey?id=t1&m=S", "/api/tracks", "/api/config", "/live.html", "/app.js"):
             self.assertEqual(self._get(base, path)[0], 404, path)
         self.assertEqual(self._get(base, "/")[1], "index.html")
         status, body = self._get(base, "/api/places?q=Leuschner")

@@ -384,3 +384,11 @@ div.more { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---- Routenkarte in der Detailansicht ---- */
+.route-map { position: relative; height: 240px; margin: 0 0 10px; border-radius: 14px; overflow: hidden; background: var(--sunken); }
+.route-map[hidden] { display: none; }
+.route-map .maplibregl-canvas { outline: none; }
+.map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #0b1420; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
+.map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #0b1420; }
+.map-flag.end { background: var(--mrh-blau); }

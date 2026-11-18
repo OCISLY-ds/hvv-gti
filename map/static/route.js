@@ -624,8 +624,170 @@
     return head;
   }
 
+
+  // ---- Routenkarte: Start, Ziel und der Weg jeder Fahrt in der Detailansicht ----
+  // MapLibre und die lokalen Kacheln (/tiles/hamburg.pmtiles) werden erst geladen, wenn eine Verbindung aufgeklappt wird.
+  // Die GTI liefert keine Linienfuehrung, gezeichnet wird deshalb von Halt zu Halt (Fusswege gestrichelt).
+
+  const routeMaps = new Map(); // r.key -> { box, map, sig }
+  let mapLib = null;
+
+  function loadMapLib() {
+    if (mapLib) return mapLib;
+    const script = (src) => new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.onload = resolve;
+      el.onerror = () => reject(new Error(src));
+      document.head.append(el);
+    });
+    mapLib = script("vendor/maplibre-gl.js").then(() => script("vendor/pmtiles.js")).then(() => {
+      maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
+    });
+    mapLib.catch(() => (mapLib = null));
+    return mapLib;
+  }
+
+  function mapStyle(dark) {
+    const L = (id, type, layer, paint, extra) => ({ id, type, source: "hh", "source-layer": layer, paint, ...extra });
+    const c = dark
+      ? { bg: "#1b2636", green: "#1f3a33", ind: "#212c3b", land: "#222f40", water: "#0f2a44", bld: "#26344a", mot: "#5b6b85", main: "#43526b", road: "#33415a" }
+      : { bg: "#f2efe9", green: "#d3e6c3", ind: "#e4e1da", land: "#ebe8e1", water: "#a9d3f0", bld: "#dedad2", mot: "#e9a570", main: "#ffffff", road: "#ffffff" };
+    return {
+      version: 8,
+      sources: { hh: { type: "vector", url: "pmtiles://" + new URL("/tiles/hamburg.pmtiles", location.href).href, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' } },
+      layers: [
+        { id: "bg", type: "background", paint: { "background-color": c.bg } },
+        L("landuse", "fill", "landuse", { "fill-color": ["match", ["get", "class"], ["park", "wood", "grass", "scrub", "national_park"], c.green, ["industrial", "parking"], c.ind, c.land] }),
+        L("water", "fill", "water", { "fill-color": c.water }),
+        L("waterway", "line", "waterway", { "line-color": c.water, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 14, 4] }),
+        L("building", "fill", "building", { "fill-color": c.bld }),
+        L("road", "line", "road", {
+          "line-color": ["match", ["get", "class"], ["motorway", "motorway_link"], c.mot, "main", c.main, c.road],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 12, 1.2, 16, 4],
+        }, { filter: ["!=", ["get", "class"], "path"] }),
+      ],
+    };
+  }
+
+  // Linien (je Fahrt oder Fussweg), Haltepunkte und die Grenzen der Route aus den Koordinaten der Verbindung
+  function routeGeo(r) {
+    const lines = [], stops = [], pts = [];
+    const ok = (p) => p && typeof p.x === "number" && typeof p.y === "number";
+    r.legs.forEach((leg) => {
+      const path = [leg.from, ...(leg.line ? leg.stops || [] : []), leg.to].filter(ok);
+      path.forEach((p) => pts.push([p.x, p.y]));
+      if (path.length >= 2) lines.push({ type: "Feature", properties: { color: leg.line ? lineColor(leg) : "#5b6785", walk: leg.line ? 0 : 1 }, geometry: { type: "LineString", coordinates: path.map((p) => [p.x, p.y]) } });
+      if (leg.line) {
+        (leg.stops || []).filter(ok).forEach((p) => stops.push({ type: "Feature", properties: { color: lineColor(leg), big: 0 }, geometry: { type: "Point", coordinates: [p.x, p.y] } }));
+        [leg.from, leg.to].filter(ok).forEach((p) => stops.push({ type: "Feature", properties: { color: lineColor(leg), big: 1 }, geometry: { type: "Point", coordinates: [p.x, p.y] } }));
+      }
+    });
+    const first = r.legs.map((l) => l.from).find(ok), last = [...r.legs].reverse().map((l) => l.to).find(ok);
+    return { lines, stops, pts, first, last, sig: JSON.stringify([lines, stops]) };
+  }
+
+  const fitRoute = (map, geo, animate) => {
+    if (!geo.pts.length) return;
+    const b = new maplibregl.LngLatBounds(geo.pts[0], geo.pts[0]);
+    geo.pts.forEach((p) => b.extend(p));
+    map.fitBounds(b, { padding: { top: 46, bottom: 26, left: 34, right: 34 }, maxZoom: 15, duration: animate ? 400 : 0 });
+  };
+
+  function drawRoute(map, geo) {
+    const set = (id, features) => map.getSource(id).setData({ type: "FeatureCollection", features });
+    set("rt-lines", geo.lines);
+    set("rt-stops", geo.stops);
+  }
+
+  function createRouteMap(h, geo) {
+    const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+    const map = new maplibregl.Map({
+      container: h.box,
+      style: mapStyle(dark),
+      attributionControl: { compact: true },
+      cooperativeGestures: true, // Seite scrollt mit einem Finger, die Karte bewegt man mit zwei
+      pitchWithRotate: false,
+      dragRotate: false,
+      locale: {
+        "CooperativeGesturesHandler.MobileHelpText": "Mit zwei Fingern bewegen",
+        "CooperativeGesturesHandler.WindowsHelpText": "Strg + Scrollen zum Zoomen",
+        "CooperativeGesturesHandler.MacHelpText": "⌘ + Scrollen zum Zoomen",
+      },
+    });
+    h.map = map;
+    map.touchZoomRotate.disableRotation();
+    map.on("load", () => {
+      map.addSource("rt-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addSource("rt-stops", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "rt-casing", type: "line", source: "rt-lines", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": dark ? "#0b1420" : "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 5, 14, 10], "line-opacity": 0.9 } });
+      map.addLayer({ id: "rt-walk", type: "line", source: "rt-lines", filter: ["==", ["get", "walk"], 1], layout: { "line-join": "round" }, paint: { "line-color": dark ? "#9fb0c8" : "#5b6785", "line-width": 3, "line-dasharray": [1, 1.6] } });
+      map.addLayer({ id: "rt-ride", type: "line", source: "rt-lines", filter: ["==", ["get", "walk"], 0], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["interpolate", ["linear"], ["zoom"], 8, 3, 14, 6] } });
+      map.addLayer({ id: "rt-stops", type: "circle", source: "rt-stops", paint: {
+        "circle-radius": ["case", ["==", ["get", "big"], 1], 5.5, 3.2],
+        "circle-color": ["case", ["==", ["get", "big"], 1], dark ? "#0b1420" : "#ffffff", dark ? "#0b1420" : "#ffffff"],
+        "circle-stroke-color": ["get", "color"],
+        "circle-stroke-width": ["case", ["==", ["get", "big"], 1], 3, 2],
+      } });
+      const mark = (p, text, cls) => {
+        if (!p) return;
+        const el = node("div", "map-flag " + cls, text);
+        new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([p.x, p.y]).addTo(map);
+      };
+      mark(geo.first, "START", "start");
+      mark(geo.last, "ZIEL", "end");
+      drawRoute(map, geo);
+      fitRoute(map, geo, false);
+    });
+  }
+
+  // Karte einer aufgeklappten Verbindung zeigen oder aktualisieren (die Liste wird beim Aktualisieren neu aufgebaut, die Karte bleibt erhalten)
+  function showRouteMap(body, r) {
+    const geo = routeGeo(r);
+    if (!r.key || !geo.lines.length) return;
+    let h = routeMaps.get(r.key);
+    if (!h) routeMaps.set(r.key, (h = { box: body._mapBox, map: null, sig: "", loading: false }));
+    else if (h.box !== body._mapBox) {
+      body._mapBox.replaceWith(h.box);
+      body._mapBox = h.box;
+      if (h.map) h.map.resize();
+    }
+    h.box.hidden = false;
+    if (h.map) {
+      if (h.sig !== geo.sig && h.map.isStyleLoaded() && h.map.getSource("rt-lines")) {
+        drawRoute(h.map, geo);
+        h.sig = geo.sig;
+      }
+      return;
+    }
+    if (h.loading) return;
+    h.loading = true;
+    h.sig = geo.sig;
+    loadMapLib()
+      .then(() => {
+        if (routeMaps.get(r.key) === h) createRouteMap(h, geo);
+      })
+      .catch(() => (h.box.hidden = true)) // ohne Kartenbibliothek bleibt die Detailansicht wie vorher
+      .finally(() => (h.loading = false));
+  }
+
+  function dropRouteMap(key) {
+    const h = routeMaps.get(key);
+    if (!h) return;
+    if (h.map) h.map.remove();
+    h.box.hidden = true; // der Kasten bleibt in der Detailansicht und nimmt beim naechsten Aufklappen eine neue Karte auf
+    routeMaps.delete(key);
+  }
+
+  function pruneRouteMaps(keepKeys) {
+    [...routeMaps.keys()].filter((k) => !keepKeys.has(k)).forEach(dropRouteMap);
+  }
+
   function tripBody(r, minTransfer, ctx) {
     const body = node("div", "trip-body");
+    body._mapBox = node("div", "route-map");
+    body._mapBox.hidden = true;
+    body.append(body._mapBox);
     const saved = isSaved(r);
     const save = node("div", "save-row");
     const saveBtn = node("button", "link", saved ? "★ Gemerkt – vergessen" : "☆ Diese Reise merken");
@@ -1143,6 +1305,7 @@
     $("foot").hidden = !state.data || !state.data.routes.length;
     const data = state.data;
     updateSavedBar();
+    if (!data) pruneRouteMaps(new Set());
     $("when-box").hidden = !data; // Zeitwahl erst nach dem ersten Ergebnis, normalerweise will man live schauen
     if (!data) return;
     if (state.fetchedAt) {
@@ -1171,12 +1334,20 @@
         if (open) {
           state.open.add(i);
           hydrateAlts(body, i, r);
-        } else state.open.delete(i);
+          showRouteMap(body, r);
+        } else {
+          state.open.delete(i);
+          dropRouteMap(r.key);
+        }
       });
       trip.append(head, body);
       out.append(trip);
-      if (state.open.has(i)) hydrateAlts(body, i, r);
+      if (state.open.has(i)) {
+        hydrateAlts(body, i, r);
+        showRouteMap(body, r);
+      }
     });
+    pruneRouteMaps(new Set(data.routes.filter((_, i) => state.open.has(i)).map((r) => r.key)));
   }
 
   function showMessage(title, text, retry) {

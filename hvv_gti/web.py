@@ -509,7 +509,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
         try:
-            if not self.app.live and (path in LIVE_PATHS or path.startswith("/tiles/")):
+            if not self.app.live and path in LIVE_PATHS:  # die Kacheln braucht auch die Routenkarte im Planer
                 return self._json({"error": "Live-Karte ist deaktiviert"}, HTTPStatus.NOT_FOUND)
             if path == "/api/vehicles":
                 data = self.app.feed.vehicles()

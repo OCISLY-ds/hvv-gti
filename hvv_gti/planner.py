@@ -627,6 +627,14 @@ class Planner:
         }
 
 
+def _xy(place: dict) -> dict:
+    """Laengen-/Breitengrad einer GTI-Haltestelle als {"x", "y"} fuer die Kartenansicht; leer, wenn die GTI keine Koordinate liefert."""
+    coordinate = place.get("coordinate") or {}
+    if isinstance(coordinate.get("x"), (int, float)) and isinstance(coordinate.get("y"), (int, float)):
+        return {"x": coordinate["x"], "y": coordinate["y"]}
+    return {}
+
+
 def normalize_route(schedule: dict) -> list[dict]:
     legs = []
     for element in schedule.get("scheduleElements", []):
@@ -634,8 +642,8 @@ def normalize_route(schedule: dict) -> list[dict]:
         line = element.get("line") or {}
         dep, arr = gti_epoch(src.get("depTime")), gti_epoch(dst.get("arrTime"))
         base = {
-            "from": {"name": src.get("name"), "id": src.get("id"), "platform": src.get("realtimePlatform") or src.get("platform") or ""},
-            "to": {"name": dst.get("name"), "id": dst.get("id"), "platform": dst.get("realtimePlatform") or dst.get("platform") or ""},
+            "from": {"name": src.get("name"), "id": src.get("id"), "platform": src.get("realtimePlatform") or src.get("platform") or "", **_xy(src)},
+            "to": {"name": dst.get("name"), "id": dst.get("id"), "platform": dst.get("realtimePlatform") or dst.get("platform") or "", **_xy(dst)},
             "dep": dep,
             "arr": arr,
         }
@@ -665,7 +673,7 @@ def ride_details(element: dict, line: dict, dep: float | None, arr: float | None
     for stop in element.get("intermediateStops") or []:
         when = gti_epoch(stop.get("depTime")) or gti_epoch(stop.get("arrTime"))
         delay = stop.get("depDelay", stop.get("arrDelay"))
-        stops.append({"name": stop.get("name"), "time": when, "delayMin": None if delay is None else round(delay / 60)})
+        stops.append({"name": stop.get("name"), "time": when, "delayMin": None if delay is None else round(delay / 60), **_xy(stop)})
     kind = line.get("type") or {}
     seen: list[str] = []
     info: list[dict] = []
