@@ -387,7 +387,9 @@
     head.append(node("b", "", name || "–"));
     if (platform) head.append(node("span", "plat", platform));
     body.append(head);
-    row.append(timeCell(ts, delayMin, cancelled), node("div", "rail"), body);
+    const tm = timeCell(ts, delayMin, cancelled);
+    if (kind === "dep") tm.append(node("div", "rail")); // die Linie beginnt unter der Abfahrtszeit und endet an der Ankunftszeit
+    row.append(tm, body);
     return row;
   }
 
@@ -487,7 +489,9 @@
       details.append(row);
     }
     body.append(details);
-    mid.append(node("div", "tm"), rail, body);
+    const tm = node("div", "tm");
+    tm.append(rail);
+    mid.append(tm, body);
     card.append(mid);
     card.append(stopRow("arr", leg.arr, leg.arrDelayMin, leg.to.name, leg.to.platform, leg.cancelled));
     return card;
@@ -527,7 +531,11 @@
       }
     }
     if (chips.childElementCount) body.append(chips);
-    row.append(node("div", "tm"), node("div", "rail"), body);
+    {
+      const tm = node("div", "tm");
+      tm.append(node("div", "rail"));
+      row.append(tm, body);
+    }
     return row;
   }
 
@@ -542,7 +550,11 @@
     const from = leg.from.name || (isFirst ? searched.from : searched.to) || "Start";
     const to = leg.to.name || (isFirst ? searched.from : searched.to) || "Ziel";
     if (from !== to) body.append(node("div", "xsub", `${from} → ${to}`));
-    row.append(node("div", "tm"), node("div", "rail"), body);
+    {
+      const tm = node("div", "tm");
+      tm.append(node("div", "rail"));
+      row.append(tm, body);
+    }
     return row;
   }
 

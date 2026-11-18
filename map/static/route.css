@@ -265,16 +265,13 @@ button { cursor: pointer; }
 
 /* Zeitleiste */
 .line { margin-top: 12px; }
-.tl { display: grid; grid-template-columns: 64px 60px minmax(0, 1fr); column-gap: 6px; } /* Schiene so breit wie ein Linienschild (20 px hoch = 50-60 px breit) */
-.tl .rail { position: relative; min-height: 100%; }
-.tl .rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 6px; margin-left: -3px; background: var(--c, #7a8296); }
-.tl.dep .rail::before { top: 18px; border-radius: 3px 3px 0 0; }
-.tl.arr .rail::before { bottom: auto; height: 18px; border-radius: 0 0 3px 3px; }
-.tl.dep .rail::after, .tl.arr .rail::after { content: ""; position: absolute; left: 50%; top: 12px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--surface); border: 3.5px solid var(--c, #7a8296); }
-.tl.arr .rail::after { top: 12px; }
-.tl.mid .rail { display: flex; align-items: center; justify-content: center; }
+.tl { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 10px; } /* Linie liegt in der Zeitspalte: unter der Abfahrtszeit, bis zur Ankunftszeit */
+.tm .rail { flex: 1 1 auto; align-self: center; width: 6px; min-height: 8px; margin-top: 5px; border-radius: 3px 3px 0 0; background: var(--c, #7a8296); }
+.tl.mid .tm { align-items: stretch; padding-top: 0; }
+.tl.mid .rail { position: relative; display: flex; align-items: center; justify-content: center; width: auto; margin: 0; border-radius: 0; background: none; }
+.tl.mid .rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 6px; margin-left: -3px; background: var(--c, #7a8296); }
 .leg { margin: 2px 0; }
-.tm { display: flex; flex-direction: column; align-items: flex-end; padding-top: 4px; text-align: right; }
+.tm { display: flex; flex-direction: column; align-items: center; padding-top: 4px; text-align: center; }
 .tm .t { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
 .tm .t.gone { text-decoration: line-through; }
 .tm .plan { font-size: 12px; color: var(--mute); margin-top: 1px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -347,7 +344,7 @@ div.more { cursor: default; }
 .notice .ndetail a { display: block; margin: 2px 0; color: inherit; text-decoration: underline; }
 .notice .nmeta { font-size: 12px; opacity: 0.85; }
 .note { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
-.xfer .rail::before { background: none; width: 0; margin-left: 0; border-left: 4px dotted var(--mute); top: 4px; bottom: 4px; }
+.xfer .tm .rail { background: none; width: 0; min-height: 0; margin: 4px 0; border-radius: 0; border-left: 4px dotted var(--mute); }
 .xfer .body { padding: 14px 0; }
 .xtext { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .xtext svg { flex: none; width: 22px; height: 22px; color: var(--mute); }
@@ -377,7 +374,7 @@ div.more { cursor: default; }
 }
 @media (max-width: 380px) {
   main { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
-  .tl { grid-template-columns: 60px 54px minmax(0, 1fr); column-gap: 4px; }
+  .tl { grid-template-columns: 58px minmax(0, 1fr); column-gap: 8px; }
   .rt-logo .lb img { height: 18px; }
   .trip-time { font-size: 22px; }
 }
