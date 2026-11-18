@@ -381,3 +381,8 @@ div.more { cursor: default; }
 .map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #0b1420; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
 .map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #0b1420; }
 .map-flag.end { background: var(--mrh-blau); }
+.place { pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #4a5f78; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
+.route-map.dark .place { color: #9fb0c8; text-shadow: 0 0 3px #1b2636, 0 0 3px #1b2636, 0 0 2px #1b2636; }
+.place.c, .place.t { font-size: 14px; font-weight: 700; }
+.place.s { letter-spacing: 0.02em; }
+.place.v { font-weight: 500; font-size: 11px; }

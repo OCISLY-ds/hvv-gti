@@ -551,6 +551,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, b"ok", "text/plain")
             if path.startswith("/icon/"):
                 return self._icon(path[len("/icon/"):])
+            if path == "/tiles/places.json":  # Orts- und Stadtteilnamen (scripts/extract_places.py), von der Routenkarte beschriftet
+                return self._file(self.app.data_dir / "places.json", "application/json", cache="public, max-age=86400")
             if path == "/tiles/hamburg.pmtiles":
                 return self._file(self.app.tiles_file(), "application/octet-stream", ranged=True)
             return self._static(path)

@@ -600,6 +600,26 @@
 
   const routeMaps = new Map(); // r.key -> { box, map, sig }
   let mapLib = null;
+  let placesData = null;
+
+  // Orts- und Stadtteilnamen als Textmarken (ohne Schriftdateien): [Name, x, y, Klasse], gross zuerst, ueberlappende werden weggelassen
+  const PLACE_MINZOOM = { c: 0, t: 8, s: 10.5, q: 11.5, v: 12 };
+  const loadPlaces = () => (placesData = placesData || fetch("/tiles/places.json").then((r) => (r.ok ? r.json() : [])).catch(() => []));
+  function labelPlaces(h) {
+    const map = h.map, zoom = map.getZoom(), b = map.getBounds();
+    h.labels.forEach((m) => m.remove());
+    h.labels = [];
+    const taken = [];
+    for (const [name, x, y, kind] of h.places) {
+      if (zoom < PLACE_MINZOOM[kind] || !b.contains([x, y])) continue;
+      const p = map.project([x, y]);
+      const w = name.length * 7 + 8, box = [p.x - w / 2, p.y - 8, p.x + w / 2, p.y + 8];
+      if (taken.some((t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) continue;
+      taken.push(box);
+      const el = node("div", "place " + kind, name);
+      h.labels.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([x, y]).addTo(map));
+    }
+  }
 
   function loadMapLib() {
     if (mapLib) return mapLib;
@@ -682,6 +702,7 @@
       dragRotate: false,
     });
     h.map = map;
+    h.box.classList.toggle("dark", dark);
     map.touchZoomRotate.disableRotation();
     map.on("load", () => {
       map.addSource("rt-lines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -700,6 +721,14 @@
         const el = node("div", "map-flag " + cls, text);
         new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([p.x, p.y]).addTo(map);
       };
+      loadPlaces().then((places) => {
+        if (h.map !== map) return;
+        const rank = { c: 0, t: 1, s: 2, q: 3, v: 4 };
+        h.places = [...places].sort((a, b) => rank[a[3]] - rank[b[3]]);
+        h.labels = [];
+        labelPlaces(h);
+        map.on("moveend", () => labelPlaces(h));
+      });
       mark(geo.first, "START", "start");
       mark(geo.last, "ZIEL", "end");
       drawRoute(map, geo);
@@ -751,6 +780,7 @@
     const h = routeMaps.get(key);
     if (!h) return;
     if (h.map) h.map.remove();
+    h.labels = [];
     h.box.hidden = true; // der Kasten bleibt in der Detailansicht und nimmt beim naechsten Aufklappen eine neue Karte auf
     routeMaps.delete(key);
   }
