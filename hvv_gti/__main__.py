@@ -136,6 +136,7 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     token = cfg.influx_read_token or cfg.influx_token
     reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
     planner = Planner(client, Reliability(reader))
+    planner.shaper = feed.shape
     icons = IconStore(args.icons_dir, client)
     app = web.MapApp(feed, icons, Path(args.static_dir), data_dir, planner, args.planner_rate, live=args.live_map)
     # Frischer Host: Gleise und Linienlogos (daraus die Linienfarben) im Hintergrund nachholen, die Karte laeuft sofort

@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from hvv_gti.geometry import KX, KY, clean
+from hvv_gti.geometry import KX, KY, clean, leg_shape
 
 X0, Y0 = 10.0, 53.5
 
@@ -47,3 +47,30 @@ class CleanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LegShapeTests(unittest.TestCase):
+    def stop(self, east, north=0.0):
+        x, y = at(east, north)
+        return {"x": x, "y": y}
+
+    def tracks(self):
+        return {
+            "a>b": {"p": flat(at(0), at(500, 300), at(1000)), "l": ["S1"]},
+            "b>c": {"p": flat(at(2000), at(1500, 200), at(1000)), "l": ["S1"]},  # gegen die Fahrtrichtung gespeichert
+            "x>y": {"p": flat(at(0), at(1000, -800), at(2000)), "l": ["U3"]},
+        }
+
+    def test_follows_the_tracks_of_the_line_in_either_direction(self):
+        leg = {"line": "S1", "from": self.stop(0), "stops": [self.stop(1000)], "to": self.stop(2000)}
+        out = metres(leg_shape(self.tracks(), leg))
+        self.assertEqual(len(out), 5)  # beide Abschnitte, der zweite umgedreht, Stoss an der Mittelhaltestelle nur einmal
+        self.assertAlmostEqual(out[1][1], 300, places=-1)
+        self.assertAlmostEqual(out[3][1], 200, places=-1)
+        self.assertNotIn(-800, [round(p[1]) for p in out])  # nicht die U3
+
+    def test_connects_straight_where_no_track_is_known_and_uses_the_base_line(self):
+        leg = {"line": "S11", "from": self.stop(0), "stops": [], "to": self.stop(5000)}
+        self.assertEqual(len(leg_shape({}, leg)) // 2, 2)
+        leg = {"line": "S11", "from": self.stop(0), "to": self.stop(1000)}
+        self.assertEqual(len(leg_shape(self.tracks(), leg)) // 2, 3)

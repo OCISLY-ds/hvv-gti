@@ -26,7 +26,7 @@ from .config import BUS5, Network
 from .icons import CONTENT_TYPES, IconStore
 from .dedupe import drop_ghosts, max_delay, trip_keys
 from .extensions import EXTENSIONS, Seed, extend
-from .geometry import clean
+from .geometry import clean, leg_shape
 from .planner import parse_place
 from .signals import SignalIndex
 
@@ -225,6 +225,11 @@ class VehicleFeed:
             if line not in station["l"]:
                 station["l"].append(line)
                 self.version += 1
+
+    def shape(self, leg: dict) -> list[float]:
+        """Verlauf einer Fahrt der Verbindungssuche entlang der gelernten Gleise (fuer die Routenkarte)."""
+        with self._state_lock:
+            return leg_shape(self.tracks, leg)
 
     def _edge_index(self) -> dict[tuple[str, str], list[str]]:
         """(Starthalt, Zielhalt) -> Gleisabschnitte dazwischen, ueber die naechste bekannte Haltestelle (<= 150 m) an den Enden."""

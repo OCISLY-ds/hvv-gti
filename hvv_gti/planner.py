@@ -379,6 +379,20 @@ class Planner:
         self._departures: dict[str, tuple[float, dict]] = {}
         self._places: dict[str, tuple[float, list[dict]]] = {}
         self._lock = threading.Lock()
+        self.shaper = None  # Callable(leg) -> flache Koordinatenliste entlang der Gleise; setzt der Server, ohne bleibt die Karte gerade
+
+    def _shape(self, legs: list[dict]) -> None:
+        """Fahrten mit dem Verlauf fuer die Routenkarte versehen (Schluessel "shape")."""
+        for leg in legs:
+            leg.pop("shape", None)
+            if self.shaper and leg.get("line"):
+                try:
+                    shape = self.shaper(leg)
+                except Exception as exc:  # die Karte ist Beiwerk, die Verbindung darf daran nicht scheitern
+                    log.warning("Streckenverlauf nicht berechnet: %s", exc)
+                    shape = []
+                if len(shape) >= 4:
+                    leg["shape"] = shape
 
     def places(self, query: str, limit: int = 8) -> list[dict]:
         """Haltestellen, Adressen und Sehenswuerdigkeiten zu einer Eingabe (z. B. "Bergedorfer Str. 5"); das Ergebnis geht unveraendert
@@ -508,6 +522,7 @@ class Planner:
         routes = []
         for schedule in schedules[:count]:
             legs = normalize_route(schedule)
+            self._shape(legs)
             dep = parse_iso(schedule.get("plannedDepartureTime"))
             try:
                 assessed = self.reliability.assess(legs, dep or local)
@@ -603,6 +618,7 @@ class Planner:
         for item in legs:
             item.pop("transfer", None)
             item.pop("stats", None)
+        self._shape(legs)
         annotate_transfers(legs)
         first, last = legs[0], legs[-1]
         rides = [item for item in legs if item.get("line")]

@@ -81,15 +81,6 @@
   // Verkehrsmittel: Bus, S-Bahn, U-Bahn, Regionalzug, Faehre (mode kommt vom Server: B, X, S, U, R, Z, F)
   const MODES = { B: ["bus", "Bus"], X: ["bus", "XpressBus"], S: ["sbahn", "S-Bahn"], U: ["ubahn", "U-Bahn"], R: ["train", "Regionalzug"], Z: ["train", "Zug"], F: ["ship", "Fähre"] };
   const modeOf = (leg) => MODES[leg.mode] || (/^\d/.test(leg.line || "") ? MODES.B : MODES.Z);
-  function modeIcon(leg) {
-    const [name, label] = modeOf(leg);
-    const n = icon(name, "mode");
-    n.setAttribute("role", "img");
-    n.setAttribute("aria-label", label);
-    n.title = label;
-    n.style.color = lineColor(leg);
-    return n;
-  }
   const KIND = { STATION: ["station", "Haltestelle"], ADDRESS: ["address", "Adresse"], POI: ["poi", "Ort"] };
 
   // ---- Linien: Farbe und Schild ----
@@ -444,7 +435,7 @@
     rail.append(logo);
     const body = node("div", "body");
     const dir = node("div", "dir" + (leg.cancelled ? " gone" : ""));
-    dir.append(modeIcon(leg), node("span", "", `Richtung ${leg.direction || "–"}`));
+    dir.append(node("span", "", `Richtung ${leg.direction || "–"}`));
     body.append(dir);
     if (ctx && leg.from.id && !leg.cancelled) {
       const alts = node("div", "alts");
@@ -601,7 +592,7 @@
     const steps = r.legs.filter((leg, i) => leg.line || i === 0 || i === r.legs.length - 1);
     steps.forEach((leg) => {
       if (mid.childElementCount) mid.append(node("span", "sep", "›"));
-      if (leg.line) mid.append(modeIcon(leg), badge(leg.line, leg.mode));
+      if (leg.line) mid.append(badge(leg.line, leg.mode));
       else {
         const w = node("span", "walk-chip");
         w.append(icon("walk"), document.createTextNode(dur(leg.walkMin)));
@@ -675,9 +666,12 @@
     const lines = [], stops = [], pts = [];
     const ok = (p) => p && typeof p.x === "number" && typeof p.y === "number";
     r.legs.forEach((leg) => {
-      const path = [leg.from, ...(leg.line ? leg.stops || [] : []), leg.to].filter(ok);
-      path.forEach((p) => pts.push([p.x, p.y]));
-      if (path.length >= 2) lines.push({ type: "Feature", properties: { color: leg.line ? lineColor(leg) : "#5b6785", walk: leg.line ? 0 : 1 }, geometry: { type: "LineString", coordinates: path.map((p) => [p.x, p.y]) } });
+      // mit Gleisgeometrie (leg.shape, flach [x, y, ...]) vom Server, sonst gerade von Halt zu Halt
+      let coords = [];
+      if (leg.line && Array.isArray(leg.shape) && leg.shape.length >= 4) for (let k = 0; k + 1 < leg.shape.length; k += 2) coords.push([leg.shape[k], leg.shape[k + 1]]);
+      else coords = [leg.from, ...(leg.line ? leg.stops || [] : []), leg.to].filter(ok).map((p) => [p.x, p.y]);
+      coords.forEach((c) => pts.push(c));
+      if (coords.length >= 2) lines.push({ type: "Feature", properties: { color: leg.line ? lineColor(leg) : "#5b6785", walk: leg.line ? 0 : 1 }, geometry: { type: "LineString", coordinates: coords } });
       if (leg.line) {
         (leg.stops || []).filter(ok).forEach((p) => stops.push({ type: "Feature", properties: { color: lineColor(leg), big: 0 }, geometry: { type: "Point", coordinates: [p.x, p.y] } }));
         [leg.from, leg.to].filter(ok).forEach((p) => stops.push({ type: "Feature", properties: { color: lineColor(leg), big: 1 }, geometry: { type: "Point", coordinates: [p.x, p.y] } }));
@@ -738,6 +732,16 @@
       mark(geo.last, "ZIEL", "end");
       drawRoute(map, geo);
       fitRoute(map, geo, false);
+      // Quellenangabe (OSM) bleibt erreichbar, ist aber eingeklappt; MapLibre klappt sie im Kompaktmodus beim Start selbst auf
+      const collapse = () => {
+        const a = h.box.querySelector(".maplibregl-ctrl-attrib");
+        if (a) {
+          a.removeAttribute("open");
+          a.classList.remove("maplibregl-compact-show");
+        }
+      };
+      collapse();
+      map.once("idle", collapse);
     });
   }
 
@@ -935,7 +939,7 @@
 
   async function rerouteCall(route, index, planned) {
     const res = await postJson("/api/reroute", {
-      prefix: route.legs.slice(0, index),
+      prefix: route.legs.slice(0, index).map(({ shape, ...leg }) => leg), // der Verlauf wird serverseitig neu berechnet
       leg: route.legs[index],
       planned,
       to: new URLSearchParams(state.last.params).get("to"),

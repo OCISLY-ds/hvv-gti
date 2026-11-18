@@ -72,3 +72,37 @@ def clean(points: list[float]) -> list[float]:
     out.append(pts[-1])
     out = dedupe(out)
     return [round(v, 5) for p in out for v in p]
+
+
+def leg_shape(tracks: dict[str, dict], leg: dict, tol_m: float = 200.0) -> list[float]:
+    """Verlauf einer Fahrt entlang der gelernten Gleisgeometrie: Halt fuer Halt wird der Abschnitt der Linie gesucht, dessen Enden
+    (in beliebiger Richtung) nahe an beiden Haltestellen liegen; ohne Treffer wird gerade verbunden. Flach: [x, y, x, y, ...]."""
+    from math import cos, radians, hypot
+
+    kx, ky = cos(radians(53.55)) * 111320, 110540
+    ok = lambda p: isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float))
+    stops = [p for p in [leg.get("from"), *(leg.get("stops") or []), leg.get("to")] if ok(p)]
+    line = leg.get("line") or ""
+    base = line[:2] if line[:1] in "SU" and len(line) > 2 else line  # S11/S21/S31 fahren auf dem Gleis der Grundlinie
+    mine = [t["p"] for t in tracks.values() if len(t.get("p", ())) >= 4 and (line in t.get("l", ()) or base in t.get("l", ()))]
+    dist = lambda x1, y1, x2, y2: hypot((x1 - x2) * kx, (y1 - y2) * ky)
+    out: list[float] = []
+
+    def add(points: list[float]) -> None:
+        for i in range(0, len(points) - 1, 2):
+            if len(out) >= 2 and out[-2] == points[i] and out[-1] == points[i + 1]:
+                continue
+            out.extend((points[i], points[i + 1]))
+
+    for a, b in zip(stops, stops[1:]):
+        best = None
+        for p in mine:
+            for pts in (p, [c for i in range(len(p) - 2, -1, -2) for c in (p[i], p[i + 1])]):
+                d = dist(a["x"], a["y"], pts[0], pts[1]) + dist(b["x"], b["y"], pts[-2], pts[-1])
+                if d <= 2 * tol_m and (best is None or d < best[0]):
+                    best = (d, pts)
+        add([a["x"], a["y"]])
+        if best:
+            add(best[1])
+        add([b["x"], b["y"]])
+    return [round(v, 5) for v in out]
