@@ -3,7 +3,7 @@
 
 Reiner Python-Leser ohne Zusatzpakete, liest Block fuer Block (wenig Speicher) und ueberspringt Bloecke ohne place-Werte.
 Aufruf: python3 scripts/extract_places.py map/tiles/work/*.osm.pbf  [-o map/data/places.json]
-Ausgabe: [[Name, Laenge, Breite, Klasse], ...], Klasse c(ity) t(own) s(uburb) q(uarter) v(illage).
+Ausgabe: [[Name, Laenge, Breite, Klasse], ...], Klasse c(ity) t(own) s(uburb) q(uarter) n(eighbourhood) v(illage) h(amlet) a(irport).
 """
 import argparse
 import json
@@ -12,7 +12,10 @@ import sys
 import zlib
 
 BBOX = (8.6, 53.1, 10.65, 53.95)  # lon_min, lat_min, lon_max, lat_max wie die Kacheln
-PLACES = {b"city": "c", b"town": "t", b"suburb": "s", b"quarter": "q", b"village": "v"}
+PLACES = {b"city": "c", b"town": "t", b"suburb": "s", b"quarter": "q", b"neighbourhood": "n", b"village": "v", b"hamlet": "h"}
+AERODROME = b"aerodrome"  # aeroway=aerodrome als Knoten (Flughaefen sind meist Flaechen, ohne Knoten fehlen sie, siehe EXTRA)
+# Flughaefen im Kartengebiet, die in OSM nur als Flaeche stehen (Name, Laenge, Breite, "a")
+EXTRA = [["Hamburg Airport", 9.9882, 53.6304, "a"], ["Airbus Finkenwerder", 9.8356, 53.5353, "a"]]
 
 
 def varint(buf, i):
@@ -75,9 +78,12 @@ def read(path):
     for data in blobs(path):
         block = fields(data)
         strings = [v for n, v in fields(next(v for n, v in block if n == 1)) if n == 1]
-        if not any(s in PLACES for s in strings) or b"place" not in strings:
+        has_place = b"place" in strings and any(s in PLACES for s in strings)
+        has_air = b"aeroway" in strings and AERODROME in strings
+        if not has_place and not has_air:
             continue  # Block ohne place=... gar nicht erst entschluesseln
-        key = strings.index(b"place")
+        key = strings.index(b"place") if has_place else -1
+        akey = strings.index(b"aeroway") if has_air else -1
         gran = next((v for n, v in block if n == 17), 100)
         lat0 = zig(next((v for n, v in block if n == 19), 0))
         lon0 = zig(next((v for n, v in block if n == 20), 0))
@@ -99,8 +105,10 @@ def read(path):
                         tags[kv[j]] = kv[j + 1]
                         j += 2
                     j += 1
-                    if key in tags and strings[tags[key]] in PLACES:
-                        kind = PLACES[strings[tags[key]]]
+                    kind = PLACES.get(strings[tags[key]]) if key in tags else None
+                    if kind is None and akey in tags and strings[tags[akey]] == AERODROME:
+                        kind = "a"
+                    if kind:
                         names = {strings[k]: strings[v] for k, v in tags.items()}
                         name = names.get(b"name:de") or names.get(b"name")
                         x, y = 1e-9 * (lon0 + gran * lon), 1e-9 * (lat0 + gran * lat)
@@ -113,12 +121,13 @@ def main():
     ap.add_argument("files", nargs="+")
     ap.add_argument("-o", "--out", default="map/data/places.json")
     args = ap.parse_args()
-    seen, out = set(), []
+    seen, out = set(), [list(p) for p in EXTRA]
     for path in args.files:
         n = len(out)
         for p in read(path):
-            k = (p[0], round(p[1], 3), round(p[2], 3))
-            if k not in seen:
+            k = (p[0], round(p[1], 1), round(p[2], 1)) if p[3] == "a" else (p[0], round(p[1], 3), round(p[2], 3))
+            near_airport = p[3] == "a" and any(o[3] == "a" and abs(o[1] - p[1]) < 0.08 and abs(o[2] - p[2]) < 0.08 for o in out)
+            if k not in seen and not near_airport:
                 seen.add(k)
                 out.append(p)
         print(f"{path}: {len(out) - n} Orte", file=sys.stderr)

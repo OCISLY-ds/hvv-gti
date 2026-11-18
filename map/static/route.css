@@ -270,7 +270,7 @@ button { cursor: pointer; }
 .tl.mid .tm { align-items: stretch; padding-top: 0; }
 .tl.mid .rail { position: relative; display: flex; align-items: center; justify-content: center; width: auto; margin: 0; border-radius: 0; background: none; }
 .tl.mid .rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 6px; margin-left: -3px; background: var(--c, #7a8296); }
-.leg { margin: 2px 0; }
+.leg { --card: color-mix(in srgb, var(--c, #7a8296) 10%, var(--surface)); margin: 8px 0; padding: 8px 10px 6px 8px; border-radius: 14px; background: var(--card); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c, #7a8296) 35%, transparent); }
 .tm { display: flex; flex-direction: column; align-items: center; padding-top: 4px; text-align: center; }
 .tm .t { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
 .tm .t.gone { text-decoration: line-through; }
@@ -286,7 +286,7 @@ button { cursor: pointer; }
 .sname { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 8px; }
 .sname b { font-size: 17px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 .sname .plat { color: var(--mute); font-size: 14px; }
-.rt-logo { position: relative; z-index: 1; display: inline-flex; padding: 3px 0; background: var(--surface); }
+.rt-logo { position: relative; z-index: 1; display: inline-flex; padding: 3px 0; background: var(--card, var(--surface)); }
 .rt-logo .lb img { height: 20px; width: auto; max-width: none; }
 .rt-logo .lb-t { font-size: 11px; padding: 1px 4px; }
 .dir { display: inline-flex; gap: 8px; max-width: 100%; align-items: center; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 14px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
@@ -386,3 +386,11 @@ div.more { cursor: default; }
 .place.c, .place.t { font-size: 14px; font-weight: 700; }
 .place.s { letter-spacing: 0.02em; }
 .place.v { font-weight: 500; font-size: 11px; }
+.place.a { font-size: 13px; font-weight: 700; }
+.place.n, .place.h { font-weight: 500; font-size: 11px; }
+
+/* Umstiege und Fusswege: ruhig und flach, damit die Fahrten (getoente Karten) herausstechen */
+.xfer { opacity: 0.9; }
+.xfer .body { padding: 6px 0; }
+.xfer .xtext { font-size: 14px; color: var(--mute); }
+.xfer .xtext svg { width: 20px; height: 20px; }

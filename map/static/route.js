@@ -603,7 +603,7 @@
   let placesData = null;
 
   // Orts- und Stadtteilnamen als Textmarken (ohne Schriftdateien): [Name, x, y, Klasse], gross zuerst, ueberlappende werden weggelassen
-  const PLACE_MINZOOM = { c: 0, t: 8, s: 10.5, q: 11.5, v: 12 };
+  const PLACE_MINZOOM = { c: 0, t: 8, a: 9, s: 10, q: 11, n: 11.8, v: 11.5, h: 13 }; // Stadt, Gemeinde, Flughafen, Stadtteil, Viertel, Quartier, Dorf, Weiler
   const loadPlaces = () => (placesData = placesData || fetch("/tiles/places.json").then((r) => (r.ok ? r.json() : [])).catch(() => []));
   function labelPlaces(h) {
     const map = h.map, zoom = map.getZoom(), b = map.getBounds();
@@ -616,7 +616,7 @@
       const w = name.length * 7 + 8, box = [p.x - w / 2, p.y - 8, p.x + w / 2, p.y + 8];
       if (taken.some((t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) continue;
       taken.push(box);
-      const el = node("div", "place " + kind, name);
+      const el = node("div", "place " + kind, kind === "a" ? "✈ " + name : name);
       h.labels.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([x, y]).addTo(map));
     }
   }
@@ -723,7 +723,7 @@
       };
       loadPlaces().then((places) => {
         if (h.map !== map) return;
-        const rank = { c: 0, t: 1, s: 2, q: 3, v: 4 };
+        const rank = { c: 0, t: 1, a: 2, s: 3, q: 4, v: 5, n: 6, h: 7 };
         h.places = [...places].sort((a, b) => rank[a[3]] - rank[b[3]]);
         h.labels = [];
         labelPlaces(h);
