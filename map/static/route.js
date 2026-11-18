@@ -1100,6 +1100,7 @@
     whenTouched = true;
     $("when").value = localInputOf(sv.plannedDep);
     document.querySelectorAll(".seg [role=radio]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.arrive === "0")));
+    showWhenSummary();
     return search();
   }
 
@@ -1142,6 +1143,7 @@
     $("foot").hidden = !state.data || !state.data.routes.length;
     const data = state.data;
     updateSavedBar();
+    $("when-box").hidden = !data; // Zeitwahl erst nach dem ersten Ergebnis, normalerweise will man live schauen
     if (!data) return;
     if (state.fetchedAt) {
       out.append(ageRow());
@@ -1204,6 +1206,7 @@
   }
 
   let whenTouched = false;
+  let showWhenSummary = () => {};
 
   // refresh = true: dieselbe Suche noch einmal (Start/Ziel/Zeitbezug wie zuletzt), Ergebnisse bleiben sichtbar und aufgeklappt
   async function search(refresh) {
@@ -1314,13 +1317,29 @@
       fields.to.set(a.place, a.text);
     });
     $("when").value = nowLocalInput();
-    $("when").addEventListener("input", () => (whenTouched = true));
+    const showWhen = () => {
+      const arrive = document.querySelector(".seg [role=radio][aria-checked=true]").dataset.arrive === "1";
+      const v = $("when").value;
+      const d = new Date(v);
+      const label = !whenTouched || !v ? "jetzt" : `${d.toLocaleDateString("de-DE", { day: "numeric", month: "numeric" })}., ${v.slice(11, 16)}`;
+      $("when-val").textContent = `${arrive ? "Ankunft" : "Abfahrt"} ${label}`;
+    };
+    $("when").addEventListener("input", () => {
+      whenTouched = true;
+      showWhen();
+    });
     $("now").addEventListener("click", () => {
       whenTouched = false;
       $("when").value = nowLocalInput();
+      showWhen();
     });
     const seg = document.querySelectorAll(".seg [role=radio]");
-    seg.forEach((btn) => btn.addEventListener("click", () => seg.forEach((b) => b.setAttribute("aria-checked", String(b === btn)))));
+    seg.forEach((btn) => btn.addEventListener("click", () => {
+      seg.forEach((b) => b.setAttribute("aria-checked", String(b === btn)));
+      showWhen();
+    }));
+    showWhenSummary = showWhen;
+    showWhen();
     const saved = store.get("hvv.minTransfer");
     if (saved !== null && /^[0-5]$/.test(saved)) $("min").value = saved;
     const showMin = () => ($("min-val").textContent = minLabel(minTransfer()));

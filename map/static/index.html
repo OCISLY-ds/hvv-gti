@@ -39,14 +39,17 @@
       <button type="button" id="swap" class="swap" aria-label="Start und Ziel tauschen"></button>
     </div>
 
-    <div class="when">
-      <div class="seg" role="radiogroup" aria-label="Zeitbezug">
-        <button type="button" role="radio" aria-checked="true" data-arrive="0">Abfahrt</button>
-        <button type="button" role="radio" aria-checked="false" data-arrive="1">Ankunft</button>
+    <details class="opts" id="when-box" hidden>
+      <summary>Zeit: <b id="when-val">Jetzt</b></summary>
+      <div class="when">
+        <div class="seg" role="radiogroup" aria-label="Zeitbezug">
+          <button type="button" role="radio" aria-checked="true" data-arrive="0">Abfahrt</button>
+          <button type="button" role="radio" aria-checked="false" data-arrive="1">Ankunft</button>
+        </div>
+        <input id="when" type="datetime-local" aria-label="Datum und Uhrzeit" required>
+        <button type="button" id="now" class="chip-btn">Jetzt</button>
       </div>
-      <input id="when" type="datetime-local" aria-label="Datum und Uhrzeit" required>
-      <button type="button" id="now" class="chip-btn">Jetzt</button>
-    </div>
+    </details>
 
     <details class="opts">
       <summary>Umsteigezeit: <b id="min-val"></b></summary>
