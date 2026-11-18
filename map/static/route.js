@@ -451,7 +451,7 @@
     const details = node("div", "details");
     const stopsKey = `${ctx && ctx.route ? ctx.route.key : ""}:${legIndex}`;
     details.hidden = !state.stopsOpen.has(stopsKey); // bleibt beim Neuladen der Liste so, wie du es gelassen hast
-    const hasDetails = (leg.stops && leg.stops.length) || leg.vehicle || leg.carrier;
+    const hasDetails = (leg.stops && leg.stops.length) || leg.origin;
     const ride = known(leg.durationMin) ? ` (${dur(leg.durationMin)})` : "";
     const label = leg.stopCount ? `Fahre ${leg.stopCount} Haltestelle${leg.stopCount === 1 ? "" : "n"}${ride}` : `Fahrt${ride}`;
     const toggle = node(hasDetails ? "button" : "div", "more");
@@ -474,13 +474,11 @@
     const st = leg.stats;
     if (st && (st.alight || known(st.cancelRate))) {
       const bits = [];
-      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min · n=${st.alight.n}${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
+      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
       if (known(st.cancelRate)) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
       body.append(node("div", "stat", bits.join(" · ")));
     }
 
-    const info = [...new Set([leg.vehicle, leg.carrier].filter(Boolean))].join(" · ");
-    if (info) details.append(node("div", "info", info));
     if (leg.origin) details.append(node("div", "info", `Fahrt ab ${leg.origin}`));
     for (const stop of leg.stops || []) {
       const row = node("div", "stop");
