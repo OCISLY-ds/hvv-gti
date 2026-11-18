@@ -678,14 +678,8 @@
       container: h.box,
       style: mapStyle(dark),
       attributionControl: { compact: true },
-      cooperativeGestures: true, // Seite scrollt mit einem Finger, die Karte bewegt man mit zwei
       pitchWithRotate: false,
       dragRotate: false,
-      locale: {
-        "CooperativeGesturesHandler.MobileHelpText": "Mit zwei Fingern bewegen",
-        "CooperativeGesturesHandler.WindowsHelpText": "Strg + Scrollen zum Zoomen",
-        "CooperativeGesturesHandler.MacHelpText": "⌘ + Scrollen zum Zoomen",
-      },
     });
     h.map = map;
     map.touchZoomRotate.disableRotation();
@@ -1317,6 +1311,7 @@
           state.open.add(i);
           hydrateAlts(body, i, r);
           showRouteMap(body, r);
+          trip.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); // aufgeklappte Verbindung fuellt den Bildschirm
         } else {
           state.open.delete(i);
           dropRouteMap(r.key);

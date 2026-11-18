@@ -237,7 +237,7 @@ button { cursor: pointer; }
 .skel i:nth-child(2) { width: 80%; }
 .skel i:nth-child(3) { width: 64%; margin-bottom: 0; }
 
-.trip { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.trip { scroll-margin-top: 8px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .trip-head { display: block; width: 100%; min-width: 0; padding: 10px 14px 10px; border: 0; background: none; text-align: left; }
 .trip-top { display: flex; align-items: baseline; gap: 10px; }
 .trip-time { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
