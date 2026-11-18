@@ -620,7 +620,6 @@
     if (r.realArr && r.plannedArr && Math.round((r.realArr - r.plannedArr) / 60) >= 1) foot.append(node("span", "pill late1", `Ankunft +${Math.round((r.realArr - r.plannedArr) / 60)} min`));
     if (r.custom && r.custom.picks.some((pick) => pick.auto)) foot.append(node("span", "pill custom", "Alternative"));
     else if (r.custom) foot.append(node("span", "pill custom", "Eigene Abfahrt"));
-    if (isSaved(r)) foot.append(node("span", "pill saved", "★ Gemerkt"));
     head.append(foot);
     return head;
   }
