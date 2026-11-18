@@ -556,38 +556,6 @@
     return row;
   }
 
-  function meter(label, value, hint, invert) {
-    const row = node("div", "meter");
-    const head = node("div", "mh");
-    head.append(node("span", "", label), node("b", "", pct(value)));
-    const bar = node("div", "bar");
-    const fill = node("span", invert ? tone(100 - value * 5) : tone(value));
-    fill.style.width = `${Math.max(2, Math.min(100, value))}%`;
-    bar.append(fill);
-    row.append(head, bar);
-    if (hint) row.append(node("div", "hint", hint));
-    return row;
-  }
-
-  function reliabilityBox(rel, minTransfer) {
-    const box = node("div", "rel");
-    const by = (rel.byMinTransfer || {})[String(minTransfer)] || rel;
-    if (by.ontimePct !== undefined) {
-      box.append(meter("Pünktlich am Ziel (≤ 3 min)", by.ontimePct, "Wahrscheinlichkeit, dass die Fahrt höchstens 3 Minuten verspätet ankommt, einschließlich verpasster Anschlüsse."));
-      if (rel.transfers) box.append(meter(`Anschluss${rel.transfers > 1 ? "züge" : ""} erreicht`, by.connectionPct, `${rel.transfers} Umstieg${rel.transfers > 1 ? "e" : ""}, Umsteigezeit: ${minLabel(minTransfer)}.`));
-    } else {
-      box.append(node("div", "hint", rel.unavailable ? "Messdaten derzeit nicht erreichbar – Verbindung ohne Zuverlässigkeitsangabe." : rel.legs ? `Für ${rel.legsWithData} von ${rel.legs} Abschnitten liegen Messdaten vor – keine Gesamtprognose möglich.` : "Keine Fahrt mit Linie."));
-    }
-    if (rel.cancelPct !== undefined) {
-      const missing = rel.cancelMissing || [];
-      // Hinweis nur, wenn Abschnitte fehlen; bei "3 von 3" waere er ueberfluessig
-      const hint = missing.length ? `Gemessen für ${rel.cancelCoverage}. Für ${missing.join(", ")} erfasst der Dienst keine Ausfälle.` : "";
-      box.append(meter("Ausfallrisiko", rel.cancelPct, hint, true));
-    }
-    else if (!rel.unavailable) box.append(node("div", "hint", "Ausfallrisiko: keine Messdaten für diese Linien."));
-    return box;
-  }
-
   function tripHead(r, minTransfer) {
     const head = node("button", "trip-head");
     head.type = "button";
@@ -845,7 +813,7 @@
       line.append(rideCard(leg, i, ctx));
       prev = leg;
     });
-    body.append(line, reliabilityBox(r.reliability || {}, minTransfer));
+    body.append(line);
     body._alts = ctx.alts;
     return body;
   }

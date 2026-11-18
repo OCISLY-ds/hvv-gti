@@ -336,11 +336,11 @@ div.more { cursor: default; }
 .stop .tm2 { flex: none; width: 44px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--mute); }
 .stop .nm2 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .stop .dm { font-size: 13px; font-weight: 700; }
-.notice { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
+.notice { margin-top: 4px; padding: 5px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
 .notice .ntitle { font-weight: 600; }
-.notice button.link { margin-top: 2px; padding: 4px 0; }
-.notice .ndetail { margin-top: 4px; }
-.notice .ndetail p { margin: 4px 0; }
+.notice button.link { margin-top: 0; padding: 2px 0; }
+.notice .ndetail { margin-top: 2px; }
+.notice .ndetail p { margin: 2px 0; }
 .notice .ndetail a { display: block; margin: 2px 0; color: inherit; text-decoration: underline; }
 .notice .nmeta { font-size: 12px; opacity: 0.85; }
 .note { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--mid-bg); color: var(--mid); font-size: 13px; }
@@ -351,14 +351,6 @@ div.more { cursor: default; }
 .xsub { margin: 2px 0 0 32px; font-size: 13px; color: var(--mute); }
 .xchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 32px; }
 
-.rel { margin-top: 12px; padding: 12px 14px 6px; border-radius: 14px; background: var(--sunken); }
-.meter { margin-bottom: 10px; }
-.meter .mh { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
-.meter .mh b { font-variant-numeric: tabular-nums; }
-.meter .bar { height: 8px; margin-top: 5px; border-radius: 4px; background: var(--line); overflow: hidden; }
-.meter .bar span { display: block; height: 100%; border-radius: 4px; background: var(--primary); }
-.meter .bar .good { background: var(--good-fill); } .meter .bar .mid { background: var(--mid-fill); } .meter .bar .bad { background: var(--bad-fill); }
-.meter .hint { margin-top: 3px; font-size: 12px; }
 
 .foot { margin: 18px 6px 0; font-size: 12px; color: var(--mute); }
 
