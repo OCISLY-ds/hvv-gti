@@ -488,3 +488,36 @@ class HistogramTest(unittest.TestCase):
         self.assertAlmostEqual(sum(hist), 100, delta=0.3)
         self.assertEqual(hist[0], round(100 * 2 / 7, 1))  # <= 0 min
         self.assertEqual(hist[-1], round(100 / 7, 1))  # > 15 min
+
+
+class StayOnBoardTest(unittest.TestCase):
+    def schedule(self, attributes):
+        place = lambda name, **extra: {"name": name, "id": "Master:" + name, "coordinate": {"x": 10.0, "y": 53.5}, **extra}
+        t = lambda hhmm: {"date": "19.11.2026", "time": hhmm}
+        ride = lambda frm, to, dep, arr, direction, sid: {
+            "from": place(frm, depTime=t(dep), depDelay=0, platform="Gleis 1"),
+            "to": place(to, arrTime=t(arr), arrDelay=0, platform="Gleis 1"),
+            "line": {"name": "S5", "direction": direction, "type": {"simpleType": "TRAIN"}},
+            "serviceId": sid,
+        }
+        change = {
+            "from": place("Neugraben", depTime=t("14:30"), platform="Gleis 1"),
+            "to": place("Neugraben", arrTime=t("14:30"), platform="Gleis 1"),
+            "line": {"name": "Umstiegsfußweg", "type": {"simpleType": "CHANGE_SAME_PLATFORM"}},
+            "attributes": attributes,
+        }
+        return {"scheduleElements": [ride("Stade", "Neugraben", "13:56", "14:30", "Neugraben", 1), change, ride("Neugraben", "Hamburg Hbf", "14:32", "14:59", "Elbgaustraße", 2)]}
+
+    def test_same_vehicle_continuing_is_marked_and_is_not_a_transfer_risk(self):
+        legs = normalize_route(self.schedule([{"isPlanned": True, "value": "Fährt weiter nach Elbgaustraße.", "types": ["NOCHANGE"]}]))
+        walk = [leg for leg in legs if not leg.get("line")][0]
+        self.assertEqual(walk["stay"], "Fährt weiter nach Elbgaustraße.")
+        second = [leg for leg in legs if leg.get("line")][1]
+        self.assertTrue(second["transfer"]["stay"])
+        self.assertEqual(second["transfer"]["stayText"], "Fährt weiter nach Elbgaustraße.")
+        self.assertEqual(second["transfer"]["waitMin"], 2)
+
+    def test_a_normal_change_stays_a_change(self):
+        legs = normalize_route(self.schedule([]))
+        second = [leg for leg in legs if leg.get("line")][1]
+        self.assertNotIn("stay", second["transfer"])

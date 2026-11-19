@@ -66,6 +66,7 @@
     ubahn: svg('<rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3.8"/><path d="M8.6 7.8v5.2a3.4 3.4 0 0 0 6.8 0V7.8"/>'),
     train: svg('<path d="M9.5 2.8h5M12 2.8v2"/><rect x="5.5" y="4.8" width="13" height="12.7" rx="3"/><path d="M5.5 11.2h13M8.3 21l1.6-3.5M15.7 21l-1.6-3.5"/><circle cx="9" cy="14.3" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="14.3" r=".8" fill="currentColor" stroke="none"/>'),
     ship: svg('<path d="M4 15.5l1.8 3.7h12.4l1.8-3.7zM7.5 15V9.5h9V15M12 9.5V5.5M9.5 5.5h5"/>'),
+    stay: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/><path d="m10.97 4.97-.02.022-3.473 4.425-2.093-2.094a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05"/></svg>',
     refresh: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>',
     chevron: svg('<path d="M5.5 9l6.5 6.5L18.5 9"/>'),
     walk: svg('<circle cx="13" cy="4.6" r="1.8" fill="currentColor"/><path d="M9.5 21.5l1.7-6.3-2.3-2.2v-4l-1.8 2.2M13 8.5l1.7 3.2 3 .8M11.2 15.2l3.5 1.6.9 4.7M8.9 9.1l3.6-1.4c.4-.1.9.1 1 .5"/>'),
@@ -657,6 +658,16 @@
     const walk = tr.walkMin || 0;
     const row = node("div", "tl xfer");
     const body = node("div", "body");
+    if (tr.stay) {
+      // derselbe Zug faehrt unter neuer Fahrtnummer weiter (z. B. S5 in Neugraben): sitzen bleiben, kein Anschlussrisiko
+      const text = node("div", "xtext");
+      text.append(icon("stay"), node("span", "", `Nicht aussteigen (${tr.waitMin} min warten), Fahrzeug fährt weiter bis ${next.to.name}`));
+      body.append(text);
+      const tm = node("div", "tm");
+      tm.append(node("div", "rail"));
+      row.append(tm, body);
+      return row;
+    }
     const parts = [];
     if (walk) parts.push(`${dur(walk)} zu Fuß`);
     if (tr.waitMin - walk > 0) parts.push(`${dur(tr.waitMin - walk)} warten`);
@@ -759,7 +770,8 @@
 
     const foot = node("div", "trip-foot");
     const rides = r.legs.filter((l) => l.line).length;
-    foot.append(node("span", "pill", rides > 1 ? `${rides - 1} Umstieg${rides > 2 ? "e" : ""}` : "Direkt"));
+    const changes = rides - 1 - r.legs.filter((l) => l.transfer && l.transfer.stay).length; // derselbe Zug faehrt weiter: kein Umstieg
+    foot.append(node("span", "pill", changes > 0 ? `${changes} Umstieg${changes > 1 ? "e" : ""}` : "Direkt"));
     const rel = r.reliability || {};
     const by = (rel.byMinTransfer || {})[String(minTransfer)] || rel;
     if (by.ontimePct !== undefined) foot.append(node("span", "pill " + tone(by.ontimePct), `${pct(by.ontimePct)} pünktlich`));
@@ -1251,7 +1263,7 @@
       const leg = route.legs[i];
       if (!leg.line) continue;
       const tr = leg.transfer;
-      if (feeder && tr && known(feeder.arrDelayMin) && !feeder.cancelled && known(feeder.arr)) {
+      if (feeder && tr && !tr.stay && known(feeder.arrDelayMin) && !feeder.cancelled && known(feeder.arr)) {
         const walk = tr.walkMin || 0;
         const base = tr.waitMin - Math.max(walk, t);
         if (base + (leg.depDelayMin || 0) - feeder.arrDelayMin <= 0) {
@@ -1425,8 +1437,13 @@
       title = next ? `Als Nächstes: ${next.leg.line} ab ${where(next.leg)} um ${hhmm(next.dep)} (in ${dur(Math.max(0, Math.round((next.dep - now) / 60)))})` : "Unterwegs";
     } else if (active.leg.line) {
       title = `Unterwegs: ${active.leg.line} Richtung ${active.leg.direction || "–"}`;
-      lines.push(`Aussteigen in ${active.leg.to.name} um ${hhmm(active.arr)}${active.leg.arrDelayMin ? ` (${signed(active.leg.arrDelayMin)} min)` : ""}`);
-      if (upcoming[0]) lines.push(`Danach: ${upcoming[0].leg.line} ab ${where(upcoming[0].leg)} um ${hhmm(upcoming[0].dep)}`);
+      const onward = r.legs.slice(r.legs.indexOf(active.leg) + 1).find((l) => l.line);
+      if (onward && onward.transfer && onward.transfer.stay) {
+        lines.push(`Nicht aussteigen in ${active.leg.to.name}: Die ${onward.line} fährt weiter bis ${onward.to.name}`);
+      } else {
+        lines.push(`Aussteigen in ${active.leg.to.name} um ${hhmm(active.arr)}${active.leg.arrDelayMin ? ` (${signed(active.leg.arrDelayMin)} min)` : ""}`);
+      }
+      if (upcoming[0] && !(onward && onward.transfer && onward.transfer.stay)) lines.push(`Danach: ${upcoming[0].leg.line} ab ${where(upcoming[0].leg)} um ${hhmm(upcoming[0].dep)}`);
     } else {
       title = `Zu Fuß: ${active.leg.from.name || (state.last && state.last.from) || "Start"} → ${active.leg.to.name || (state.last && state.last.to) || "Ziel"}`;
       lines.push(`Noch ${dur(Math.max(1, Math.round((active.arr - now) / 60)))}`);

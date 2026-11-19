@@ -225,7 +225,8 @@ class Reliability:
             }
         known = [i for i, (b, a, _) in enumerate(info) if a is not None]
         result: dict = {"legsWithData": len(known), "legs": len(rides)}
-        n_transfers = len(rides) - 1
+        stays = {i for i in range(1, len(rides)) if (rides[i].get("transfer") or {}).get("stay")}  # Sitzenbleiben: kein echter Umstieg
+        n_transfers = len(rides) - 1 - len(stays)
         full = bool(rides) and len(known) == len(rides)
         # Je Mindest-Umsteigezeit T (Minuten): Anteil der Simulationen, in denen alle bzw. der einzelne Anschluss erreicht wird.
         # Alle T teilen sich dieselben Zufallsziehungen, damit die Kurve ueber T gleichmaessig faellt.
@@ -246,6 +247,9 @@ class Reliability:
                 for t in TRANSFER_STEPS:
                     ok_all = True
                     for i in range(1, len(rides)):
+                        if i in stays:
+                            each_ok[(i, t)] += 1  # derselbe Zug: der Anschluss ist sicher
+                            continue
                         feeder = alight_d[i - 1]
                         # verspaetete Zuege ziehen die Reserve auf: 1 min Reserve und 1 min Verspaetung = verpasst
                         if feeder is not None and feeder - board_d[i] < slack[(i, t)]:
@@ -263,7 +267,7 @@ class Reliability:
                 result["transfers"] = n_transfers
             for i in range(1, len(rides)):
                 transfer = rides[i].get("transfer")
-                if transfer is not None and info[i - 1][1] is not None:
+                if transfer is not None and i not in stays and info[i - 1][1] is not None:
                     transfer["catchByMin"] = {str(t): round(100 * each_ok[(i, t)] / SIMULATIONS, 1) for t in TRANSFER_STEPS}
         cancels = [c for _, _, c in info]
         known_cancel = [c for c in cancels if c is not None]
@@ -777,7 +781,9 @@ def normalize_route(schedule: dict) -> list[dict]:
                 }
             )
         elif dep is not None and arr is not None:
-            legs.append({**base, "line": None, "walkMin": round((arr - dep) / 60)})
+            stay = next((a.get("value") for a in element.get("attributes") or [] if "NOCHANGE" in (a.get("types") or [])), None)
+            # NOCHANGE: derselbe Zug faehrt unter neuer Fahrtnummer weiter (S5 in Neugraben), die GTI nennt es "Fahrt weiter nach ..."
+            legs.append({**base, "line": None, "walkMin": round((arr - dep) / 60), **({"stay": stay or "Fährt weiter."} if stay else {})})
     annotate_transfers(legs)
     return legs
 
@@ -876,9 +882,11 @@ def annotate_transfers(legs: list[dict]) -> None:
     """Haengt an jede Fahrt nach der ersten ein `transfer`: Station, Zeit bis zur Abfahrt, Ankunfts- und Abfahrtsgleis, Fussweg."""
     previous = None
     walk_s = 0
+    stay = None
     for leg in legs:
         if not leg.get("line"):
             walk_s += (leg["arr"] - leg["dep"]) if leg.get("arr") is not None and leg.get("dep") is not None else 0
+            stay = leg.get("stay") or stay
             continue
         if previous is not None and previous.get("arr") is not None and leg.get("dep") is not None:
             wait = leg["dep"] - previous["arr"]
@@ -890,5 +898,6 @@ def annotate_transfers(legs: list[dict]) -> None:
                 "arrPlatform": previous["to"]["platform"],
                 "depPlatform": leg["from"]["platform"],
                 "arr": previous["arr"],
+                **({"stay": True, "stayText": stay} if stay else {}),  # derselbe Zug faehrt weiter: nicht aussteigen, kein Anschlussrisiko
             }
-        previous, walk_s = leg, 0
+        previous, walk_s, stay = leg, 0, None
