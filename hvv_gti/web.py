@@ -611,6 +611,8 @@ class Handler(BaseHTTPRequestHandler):
         except GtiError as exc:
             log.error("Planer: %s", exc)
             return self._json({"error": "HVV-Schnittstelle derzeit nicht erreichbar"}, HTTPStatus.BAD_GATEWAY)
+        except (BrokenPipeError, ConnectionResetError):
+            return  # der Browser hat die Anfrage abgebrochen (Seite gewechselt, neue Suche): nichts mehr zu senden, kein Fehler
         except OSError as exc:
             log.error("Planer (Influx): %s", exc)
             return self._json({"error": "Messdaten derzeit nicht erreichbar"}, HTTPStatus.BAD_GATEWAY)
