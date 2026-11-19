@@ -54,6 +54,16 @@ test("text colours keep AA contrast on their surfaces in light and dark mode", (
   }
 });
 
+test("borders of interactive controls reach 3:1 on surface and field fill in light and dark mode", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../../map/static/route.css"), "utf8");
+  const dark = css.slice(css.indexOf("@media (prefers-color-scheme: dark)"), css.indexOf("*, *::before"));
+  const light = tokens(css.slice(css.indexOf(":root {"), css.indexOf("@media (prefers-color-scheme: dark)")));
+  const night = { ...light, ...tokens(dark) };
+  for (const [name, t] of [["hell", light], ["dunkel", night]]) {
+    for (const bg of ["surface", "sunken"]) assert.ok(ratio(t["line-ui"], t[bg]) >= 3, `${name}: line-ui auf ${bg} = ${ratio(t["line-ui"], t[bg]).toFixed(2)}`);
+  }
+});
+
 test("the page has no header block and the destination marker is the geo-alt pin", () => {
   const html = fs.readFileSync(path.join(__dirname, "../../map/static/index.html"), "utf8");
   assert.ok(!html.includes('class="top"') && !html.includes('class="band"'));

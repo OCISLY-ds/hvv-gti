@@ -14,6 +14,7 @@
   --ink: #003064;
   --mute: #4a5f78;
   --line: #d3dce8;
+  --line-ui: #72869f; /* Rahmen interaktiver Elemente: >= 3 : 1 auf Flaeche und Feldfuellung (WCAG 1.4.11); --line bleibt fuer Trennlinien */
   --primary: #003064;
   --on-primary: #ffffff;
   --focus: #003064;
@@ -41,6 +42,7 @@
     --ink: #e8f1fb;
     --mute: #9db3cc;
     --line: #234466;
+    --line-ui: #5a80a4;
     --primary: #40c0f0;
     --on-primary: #002040;
     --focus: #7fd6f6;
@@ -85,7 +87,7 @@ button { cursor: pointer; }
   width: 100%;
   height: var(--tap);
   padding: 0 84px 0 44px;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-ui);
   border-radius: 14px;
   background: var(--sunken);
   font-size: 17px; /* >= 16 px, sonst zoomt iOS beim Fokussieren */
@@ -124,7 +126,7 @@ button { cursor: pointer; }
   height: 44px;
   display: grid;
   place-items: center;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-ui);
   border-radius: 50%;
   background: var(--surface);
   color: var(--primary);
@@ -167,7 +169,7 @@ button { cursor: pointer; }
 /* Zeile 1: Abfahrt/Ankunft ueber die volle Breite. Zeile 2: Datum + "Jetzt". Eine einzige Zeile aus drei Elementen war auf
    dem Handy zu breit (iOS gibt datetime-local eine Mindestbreite und ignoriert min-width). */
 .when { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 12px; }
-.seg { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 12px; background: var(--sunken); border: 1.5px solid var(--line); }
+.seg { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 12px; background: var(--sunken); border: 1.5px solid var(--line-ui); }
 .seg button { height: 40px; padding: 0 8px; border: 0; border-radius: 9px; background: none; font-weight: 600; font-size: 15px; color: var(--mute); }
 .seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(15 23 42 / 18%); }
 .when input[type="datetime-local"] {
@@ -179,7 +181,7 @@ button { cursor: pointer; }
   height: var(--tap);
   padding: 0 10px;
   text-align: center;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-ui);
   border-radius: 14px;
   background: var(--sunken);
   font-size: 16px;
@@ -188,7 +190,7 @@ button { cursor: pointer; }
   appearance: none;
 }
 .when input[type="datetime-local"]::-webkit-date-and-time-value { text-align: center; min-width: 0; margin: 0 auto; }
-.chip-btn { grid-column: 2; height: var(--tap); padding: 0 16px; border: 1.5px solid var(--line); border-radius: 14px; background: none; font-weight: 600; font-size: 15px; color: var(--primary); }
+.chip-btn { grid-column: 2; height: var(--tap); padding: 0 16px; border: 1.5px solid var(--line-ui); border-radius: 14px; background: none; font-weight: 600; font-size: 15px; color: var(--primary); }
 .chip-btn:active { background: var(--sunken); }
 
 .opts { margin-top: 10px; }
@@ -221,7 +223,7 @@ button { cursor: pointer; }
 .age { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 0 6px; font-size: 14px; color: var(--mute); }
 .age .age-text { min-width: 0; }
 .age b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.age .refresh { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--primary); font-size: 14px; font-weight: 600; }
+.age .refresh { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line-ui); border-radius: 22px; background: var(--surface); color: var(--primary); font-size: 14px; font-weight: 600; }
 .age .refresh svg { width: 18px; height: 18px; }
 .age .refresh:active { background: var(--sunken); }
 .age .refresh:disabled { opacity: 0.7; cursor: progress; }
@@ -230,7 +232,7 @@ button { cursor: pointer; }
 .msg { min-width: 0; overflow-wrap: anywhere; padding: 22px 16px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-align: center; color: var(--mute); }
 .msg strong { display: block; color: var(--ink); font-size: 17px; margin-bottom: 4px; }
 .msg.err strong { color: var(--bad); }
-.msg .retry { margin-top: 12px; height: 44px; padding: 0 18px; border: 1.5px solid var(--line); border-radius: 22px; background: none; font-weight: 600; color: var(--primary); }
+.msg .retry { margin-top: 12px; height: 44px; padding: 0 18px; border: 1.5px solid var(--line-ui); border-radius: 22px; background: none; font-weight: 600; color: var(--primary); }
 .skel { padding: 16px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
 .skel i { display: block; height: 14px; border-radius: 7px; margin-bottom: 10px; background: linear-gradient(90deg, var(--sunken) 25%, var(--line) 37%, var(--sunken) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
 .skel i:nth-child(1) { width: 48%; height: 22px; }
@@ -289,7 +291,7 @@ button { cursor: pointer; }
 .rt-logo { position: relative; z-index: 1; display: inline-flex; padding: 3px 0; background: var(--card, var(--surface)); }
 .rt-logo .lb img { height: 20px; width: auto; max-width: none; }
 .rt-logo .lb-t { font-size: 11px; padding: 1px 4px; }
-.dir { display: inline-flex; gap: 8px; max-width: 100%; align-items: center; padding: 6px 12px; border: 1.5px solid var(--line); border-radius: 14px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.dir { display: inline-flex; gap: 8px; max-width: 100%; align-items: center; padding: 6px 12px; border: 1.5px solid var(--line-ui); border-radius: 14px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .dir.gone { text-decoration: line-through; color: var(--mute); }
 /* Verkehrsmittel-Symbol (Bus, S-Bahn, U-Bahn, Regionalzug, Faehre), Farbe der Linie */
 .mode { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; }
@@ -301,7 +303,7 @@ button { cursor: pointer; }
 .alts { margin-top: 2px; }
 .alts-toggle { margin-top: 0; color: var(--ink); font-weight: 600; }
 .alt-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 2px 0 8px; }
-.alt-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; min-height: var(--tap); padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--surface); text-align: left; }
+.alt-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; min-height: var(--tap); padding: 8px 12px; border: 1.5px solid var(--line-ui); border-radius: 14px; background: var(--surface); text-align: left; }
 .alt-item:active { background: var(--sunken); }
 .alt-item:disabled { opacity: 0.6; cursor: progress; }
 .alt-t { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
