@@ -282,6 +282,15 @@ class Config:
     influx_bucket: str = "hvv"
     influx_token: str = field(default="", repr=False)
     influx_read_token: str = field(default="", repr=False)  # nur Lesen (Routenplaner der Karte); sonst gilt influx_token
+    # Senken des Collectors, kommagetrennt: influx (direkt in InfluxDB) und/oder spool (Dateien, die der Shipper per GitHub verschickt)
+    sinks: tuple[str, ...] = ("influx",)
+    spool_dir: str = "data/spool"
+    ship_interval: float = 21600.0
+    ship_retention_days: float = 7.0
+    github_repo: str = ""  # owner/name des privaten Repos, dessen Releases die Datenpakete tragen
+    github_token: str = field(default="", repr=False)
+    db_url: str = field(default="", repr=False)  # postgresql://... : TimescaleDB der neuen Maschine (Routenplaner liest daraus, Importer schreibt hinein)
+    import_interval: float = 300.0
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -302,11 +311,28 @@ class Config:
             influx_bucket=e.get("INFLUX_BUCKET", d.influx_bucket),
             influx_token=e.get("INFLUX_TOKEN", d.influx_token),
             influx_read_token=e.get("INFLUX_READ_TOKEN", d.influx_read_token),
+            sinks=tuple(x.strip() for x in e.get("HVV_SINKS", ",".join(d.sinks)).split(",") if x.strip()),
+            spool_dir=e.get("HVV_SPOOL_DIR", d.spool_dir),
+            ship_interval=float(e.get("HVV_SHIP_INTERVAL", d.ship_interval)),
+            ship_retention_days=float(e.get("HVV_SHIP_RETENTION_DAYS", d.ship_retention_days)),
+            github_repo=e.get("GITHUB_REPO", d.github_repo),
+            github_token=e.get("GITHUB_TOKEN", d.github_token),
+            db_url=e.get("HVV_DB_URL", d.db_url),
+            import_interval=float(e.get("HVV_IMPORT_INTERVAL", d.import_interval)),
         )
 
     def require_gti(self) -> None:
         if not self.gti_user or not self.gti_password:
             raise ConfigError("HVV_GTI_USER und HVV_GTI_PASSWORD fehlen (siehe .env.example)")
+
+    def require_github(self) -> None:
+        missing = [n for n, v in (("GITHUB_REPO", self.github_repo), ("GITHUB_TOKEN", self.github_token)) if not v]
+        if missing:
+            raise ConfigError(f"{', '.join(missing)} fehlt (siehe .env.example)")
+
+    def require_db(self) -> None:
+        if not self.db_url:
+            raise ConfigError("HVV_DB_URL fehlt (postgresql://benutzer:passwort@host/hvv)")
 
     def require_influx(self) -> None:
         missing = [n for n, v in (("INFLUX_ORG", self.influx_org), ("INFLUX_TOKEN", self.influx_token)) if not v]

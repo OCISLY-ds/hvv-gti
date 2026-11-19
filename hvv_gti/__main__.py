@@ -11,6 +11,7 @@ from . import collector
 from .client import TZ, GtiClient, GtiError
 from .config import Config, ConfigError, load_dotenv
 from .influx import InfluxWriter
+from .spool import MultiWriter
 
 HAMBURG_BBOX = "9.70,53.35,10.35,53.75"
 
@@ -60,12 +61,152 @@ def cmd_collect(cfg: Config, args: argparse.Namespace) -> int:
     client = _client(cfg)
     writer = None
     if not args.dry_run:
-        cfg.require_influx()
-        writer = InfluxWriter(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, cfg.influx_token)
+        unknown = set(cfg.sinks) - {"influx", "spool"}
+        if unknown or not cfg.sinks:
+            raise ConfigError(f"HVV_SINKS: unbekannte Senke {sorted(unknown) or '(leer)'}; erlaubt sind influx und spool")
+        sinks = []
+        if "influx" in cfg.sinks:
+            cfg.require_influx()
+            sinks.append(InfluxWriter(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, cfg.influx_token))
+        if "spool" in cfg.sinks:
+            from .spool import SpoolWriter
+
+            sinks.append(SpoolWriter(cfg.spool_dir))
+        writer = sinks[0] if len(sinks) == 1 else MultiWriter(sinks)
     stop_event = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop_event.set())
     return collector.run(cfg, client, writer, stop_event, once=args.once)
+
+
+def _stop_on_signal() -> threading.Event:
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    return stop
+
+
+def cmd_ship(cfg: Config, args: argparse.Namespace) -> int:
+    from .github import Releases
+    from .spool import Shipper, SpoolWriter
+
+    cfg.require_github()
+    shipper = Shipper(SpoolWriter(cfg.spool_dir), Releases(cfg.github_repo, cfg.github_token), cfg.ship_retention_days)
+    if args.once:
+        print(shipper.ship_once() or "nichts zu verschicken")
+        return 0
+    shipper.run(_stop_on_signal(), cfg.ship_interval)
+    return 0
+
+
+def cmd_export_history(cfg: Config, args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .github import Releases
+    from .migrate import InfluxExport, export_history
+
+    cfg.require_influx()
+    token = cfg.influx_read_token or cfg.influx_token
+    files = export_history(InfluxExport(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token), args.days, Path(args.out))
+    print(f"{len(files)} Tagesdateien in {args.out}")
+    if args.no_upload:
+        return 0
+    cfg.require_github()
+    github = Releases(cfg.github_repo, cfg.github_token)
+    release = github.release("data-history")
+    sent = sum(1 for f in files if github.upload(release, f))
+    print(f"{sent} neue Dateien in das Release data-history geladen ({len(files) - sent} waren schon da)")
+    return 0
+
+
+def cmd_push_assets(cfg: Config, args: argparse.Namespace) -> int:
+    import tempfile
+    from pathlib import Path
+
+    from .github import Releases
+    from .migrate import pack_assets
+
+    cfg.require_github()
+    github = Releases(cfg.github_repo, cfg.github_token)
+    with tempfile.TemporaryDirectory() as tmp:
+        name = f"hvv-assets-{datetime.now(timezone.utc):%Y%m%d}.tar.gz"
+        archive = Path(tmp) / name
+        names = pack_assets(Path(args.root), archive)
+        print(f"{len(names)} Eintraege gepackt ({archive.stat().st_size // 1024 // 1024} MB): " + ", ".join(names))
+        sent = github.upload(github.release("assets-map"), archive, name)
+    print("hochgeladen" if sent else "dieses Paket gibt es heute schon")
+    return 0
+
+
+def cmd_pull_assets(cfg: Config, args: argparse.Namespace) -> int:
+    import tempfile
+    from pathlib import Path
+
+    from .github import Releases
+    from .migrate import unpack_assets
+
+    cfg.require_github()
+    github = Releases(cfg.github_repo, cfg.github_token)
+    release = github.release("assets-map", create=False)
+    assets = sorted(github.assets(release), key=lambda a: a["name"]) if release else []
+    if not assets:
+        print("Kein Paket im Release assets-map", file=sys.stderr)
+        return 1
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / assets[-1]["name"]
+        github.download(assets[-1], archive)
+        done = unpack_assets(archive, Path(args.root))
+    print(f"{len(done)} Dateien aus {assets[-1]['name']} nach {args.root} entpackt")
+    return 0
+
+
+def _connect(cfg: Config):
+    import psycopg
+
+    cfg.require_db()
+    return psycopg.connect(cfg.db_url)
+
+
+def cmd_db_init(cfg: Config, args: argparse.Namespace) -> int:
+    from .tsdb import ensure_schema
+
+    with _connect(cfg) as conn:
+        print("TimescaleDB aktiv" if ensure_schema(conn) else "Schema angelegt (ohne TimescaleDB-Erweiterung)")
+    return 0
+
+
+def cmd_import_file(cfg: Config, args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .migrate import import_file
+    from .tsdb import ensure_schema
+
+    with _connect(cfg) as conn:
+        ensure_schema(conn)
+        for name in args.files:
+            counts = import_file(conn, Path(name))
+            print(f"{name}: {counts['points']} Punkte, {counts['skipped']} uebersprungen")
+    return 0
+
+
+def cmd_import_github(cfg: Config, args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .github import Releases
+    from .migrate import import_pending, run_importer
+    from .tsdb import ensure_schema
+
+    cfg.require_github()
+    cfg.require_db()
+    github = Releases(cfg.github_repo, cfg.github_token)
+    if args.once:
+        with _connect(cfg) as conn:
+            ensure_schema(conn)
+            done = import_pending(conn, github, Path(args.tmp) if args.tmp else None)
+        print(f"{len(done)} Pakete eingelesen: " + ", ".join(f"{a} ({c['points']})" for a, c in done))
+        return 0
+    run_importer(cfg.db_url, github, _stop_on_signal(), cfg.import_interval, Path(args.tmp) if args.tmp else None)
+    return 0
 
 
 def cmd_probe_vehicles(cfg: Config, args: argparse.Namespace) -> int:
@@ -134,7 +275,12 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     from .planner import InfluxReader, Planner, Reliability
 
     token = cfg.influx_read_token or cfg.influx_token
-    reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
+    if cfg.db_url:  # neue Maschine: Statistik aus der TimescaleDB
+        from .tsdb import TimescaleReader
+
+        reader = TimescaleReader(cfg.db_url)
+    else:
+        reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
     reliability = Reliability(reader)
     from .stationmatch import StationModels
     from .web import SEED_DIR
@@ -180,6 +326,36 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--once", action="store_true", help="nur ein Zyklus")
     p.add_argument("--dry-run", action="store_true", help="Line Protocol ausgeben statt zu schreiben")
     p.set_defaults(func=cmd_collect)
+
+    p = sub.add_parser("ship", help="Spool-Dateien als Datenpaket in ein GitHub-Release hochladen (Schleife oder --once)")
+    p.add_argument("--once", action="store_true")
+    p.set_defaults(func=cmd_ship)
+
+    p = sub.add_parser("export-history", help="Historie aus InfluxDB als Tagesdateien exportieren und in das Release data-history laden")
+    p.add_argument("--days", type=int, default=60, help="so viele Tage zurueck (Tage ohne Daten werden uebersprungen)")
+    p.add_argument("--out", default="data/export")
+    p.add_argument("--no-upload", action="store_true")
+    p.set_defaults(func=cmd_export_history)
+
+    p = sub.add_parser("push-assets", help="Kartenkacheln, gelernte Gleise und Logos (nicht in Git) als Paket in das Release assets-map laden")
+    p.add_argument("--root", default=".")
+    p.set_defaults(func=cmd_push_assets)
+
+    p = sub.add_parser("pull-assets", help="das neueste Paket aus assets-map holen und entpacken")
+    p.add_argument("--root", default=".")
+    p.set_defaults(func=cmd_pull_assets)
+
+    p = sub.add_parser("db-init", help="Tabellen in der TimescaleDB anlegen (idempotent)")
+    p.set_defaults(func=cmd_db_init)
+
+    p = sub.add_parser("import-file", help="Line-Protocol-Dateien (.lp/.lp.gz) direkt in die TimescaleDB einlesen")
+    p.add_argument("files", nargs="+")
+    p.set_defaults(func=cmd_import_file)
+
+    p = sub.add_parser("import-github", help="Datenpakete aus den GitHub-Releases data-* in die TimescaleDB einlesen (Schleife oder --once)")
+    p.add_argument("--once", action="store_true")
+    p.add_argument("--tmp", default="")
+    p.set_defaults(func=cmd_import_github)
 
     p = sub.add_parser("probe-vehicles", help="getVehicleMap einmal abfragen und Umfang messen")
     p.add_argument("--bbox", default=HAMBURG_BBOX, help="lon1,lat1,lon2,lat2 (WGS84)")

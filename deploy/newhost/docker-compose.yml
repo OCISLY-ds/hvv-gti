@@ -1,0 +1,116 @@
+# Neue Maschine: TimescaleDB, Importer (holt die Datenpakete aus GitHub), Routenplaner, Grafana und (optional) Cloudflare-Tunnel.
+# Der Pi sammelt weiter die GTI-Daten und verschickt sie per GitHub-Release; die Maschinen sprechen nie direkt miteinander.
+# Start:  cd deploy/newhost && cp .env.example .env && (ausfuellen) && docker compose up -d --build
+# Aufbau und Umzug Schritt fuer Schritt: MIGRATION.md
+name: hvv
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: hvv-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?in .env setzen}
+      POSTGRES_DB: hvv
+      HVV_RO_PASSWORD: ${HVV_RO_PASSWORD:?in .env setzen}
+      TS_TUNE_MEMORY: ${DB_MEMORY:-4GB}  # so viel RAM soll die Datenbank nutzen duerfen (timescaledb-tune)
+      TS_TUNE_NUM_CPUS: ${DB_CPUS:-4}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"  # nur lokal (Backup, psql); Grafana und Planer erreichen sie im Compose-Netz
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hvv"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    shm_size: 512mb
+
+  # legt Tabellen und Hypertabellen an (idempotent), danach starten die uebrigen Dienste
+  dbinit:
+    build: {context: ../.., network: host}
+    image: hvv-gti:latest
+    container_name: hvv-dbinit
+    command: ["db-init"]
+    environment:
+      HVV_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@timescaledb:5432/hvv
+    depends_on:
+      timescaledb: {condition: service_healthy}
+    restart: "no"
+
+  # holt neue Datenpakete (Release-Anhaenge data-*) aus dem privaten GitHub-Repo und liest sie ein; merkt sich in hvv_import_log, was drin ist
+  importer:
+    image: hvv-gti:latest
+    container_name: hvv-importer
+    restart: unless-stopped
+    command: ["import-github"]
+    environment:
+      HVV_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@timescaledb:5432/hvv
+      GITHUB_REPO: ${GITHUB_REPO:?in .env setzen}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:?in .env setzen}
+      HVV_IMPORT_INTERVAL: ${HVV_IMPORT_INTERVAL:-300}
+    user: "1000:1000"
+    volumes:  # fuer `docker compose run --rm importer pull-assets`: Kacheln, Gleise und Logos aus dem Release assets-map
+      - ../../data:/app/data
+      - ../../map/data:/app/map/data
+    depends_on:
+      dbinit: {condition: service_completed_successfully}
+
+  # Routenplaner (Startseite) und 3D-Bahnhoefe; Zuverlaessigkeit der Verbindungen kommt aus der TimescaleDB
+  map:
+    image: hvv-gti:latest
+    container_name: hvv-map
+    restart: unless-stopped
+    command: ["serve-map", "--port", "8090"]
+    environment:
+      HVV_GTI_USER: ${HVV_GTI_USER:?in .env setzen}
+      HVV_GTI_PASSWORD: ${HVV_GTI_PASSWORD:?in .env setzen}
+      HVV_GTI_BASE_URL: ${HVV_GTI_BASE_URL:-https://gti.geofox.de}
+      HVV_API_VERSION: ${HVV_API_VERSION:-63}
+      HVV_MIN_REQUEST_INTERVAL: ${HVV_MIN_REQUEST_INTERVAL:-1.2}
+      HVV_DB_URL: postgresql://hvv_ro:${HVV_RO_PASSWORD}@timescaledb:5432/hvv
+    user: "1000:1000"
+    volumes:
+      - ../../data:/app/data
+      - ../../map/data:/app/map/data
+    ports:
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      dbinit: {condition: service_completed_successfully}
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hvv-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?in .env setzen}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS:-false}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_HIDE_VERSION: "true"
+      HVV_RO_PASSWORD: ${HVV_RO_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../grafana/dashboards-sql:/etc/grafana/dashboards:ro
+      - ../../data/icons:/usr/share/grafana/public/img/hvv:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      dbinit: {condition: service_completed_successfully}
+
+  # Oeffentlicher Zugang zum Planer ueber Cloudflare (Profil "tunnel"): im Dashboard zeigt der Public Hostname auf http://localhost:8090
+  tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: hvv-tunnel
+    restart: unless-stopped
+    network_mode: host
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?in .env setzen}
+
+volumes:
+  db-data:
+  grafana-data:
