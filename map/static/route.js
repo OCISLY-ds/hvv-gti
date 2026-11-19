@@ -796,7 +796,7 @@
     r.legs.forEach((leg) => {
       // mit Gleisgeometrie (leg.shape, flach [x, y, ...]) vom Server, sonst gerade von Halt zu Halt
       let coords = [];
-      if (leg.line && Array.isArray(leg.shape) && leg.shape.length >= 4) for (let k = 0; k + 1 < leg.shape.length; k += 2) coords.push([leg.shape[k], leg.shape[k + 1]]);
+      if (Array.isArray(leg.shape) && leg.shape.length >= 4) for (let k = 0; k + 1 < leg.shape.length; k += 2) coords.push([leg.shape[k], leg.shape[k + 1]]);
       else coords = [leg.from, ...(leg.line ? leg.stops || [] : []), leg.to].filter(ok).map((p) => [p.x, p.y]);
       coords.forEach((c) => pts.push(c));
       if (leg.line && coords.length >= 2) badges.push({ leg, at: midpoint(coords) });
@@ -936,7 +936,6 @@
     saveBtn.type = "button";
     saveBtn.addEventListener("click", () => (saved ? forgetSaved() : saveRoute(ctx.ri)));
     save.append(saveBtn);
-    if (!saved) save.append(node("span", "hint", "Du siehst sie beim nächsten Besuch wieder, mit aktuellen Zeiten."));
     body.append(save);
     if (r.custom) {
       const autos = r.custom.picks.some((pick) => pick.auto), manual = r.custom.picks.some((pick) => !pick.auto);
@@ -1077,7 +1076,7 @@
 
   async function rerouteCall(route, index, planned) {
     const res = await postJson("/api/reroute", {
-      prefix: route.legs.slice(0, index).map(({ shape, ...leg }) => leg), // der Verlauf wird serverseitig neu berechnet
+      prefix: route.legs.slice(0, index),
       leg: route.legs[index],
       planned,
       to: new URLSearchParams(state.last.params).get("to"),

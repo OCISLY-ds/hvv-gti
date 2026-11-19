@@ -386,7 +386,8 @@ class Planner:
     def _shape(self, legs: list[dict]) -> None:
         """Fahrten mit dem Verlauf fuer die Routenkarte versehen (Schluessel "shape")."""
         for leg in legs:
-            leg.pop("shape", None)
+            if leg.get("shape"):
+                continue  # die GTI hat den Verlauf geliefert (withPaths), auch fuer Fusswege
             if self.shaper and leg.get("line"):
                 try:
                     shape = self.shaper(leg)
@@ -513,6 +514,7 @@ class Planner:
                 "schedulesAfter": 0 if arrive else count - 1,
                 "realtime": "REALTIME",
                 "intermediateStops": True,
+                "withPaths": True,  # Verlauf je Abschnitt (Strassen fuer Fusswege, Gleise/Strassen fuer Fahrten) fuer die Routenkarte
             },
         )
         return response, response.get("realtimeSchedules") or response.get("schedules") or []
@@ -717,6 +719,21 @@ def _xy(place: dict) -> dict:
     return {}
 
 
+def _path_shape(element: dict) -> list[float]:
+    """Verlauf eines Abschnitts aus den GTI-Pfaden (`paths[].track[]`) als flache Liste [x, y, x, y, ...]; leer, wenn die GTI keine liefert."""
+    out: list[float] = []
+    for path in element.get("paths") or []:
+        for point in path.get("track") or []:
+            x, y = point.get("x"), point.get("y")
+            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                continue
+            x, y = round(x, 5), round(y, 5)
+            if len(out) >= 2 and out[-2] == x and out[-1] == y:
+                continue
+            out.extend((x, y))
+    return out if len(out) >= 4 else []
+
+
 def normalize_route(schedule: dict) -> list[dict]:
     legs = []
     for element in schedule.get("scheduleElements", []):
@@ -728,6 +745,7 @@ def normalize_route(schedule: dict) -> list[dict]:
             "to": {"name": dst.get("name"), "id": dst.get("id"), "platform": dst.get("realtimePlatform") or dst.get("platform") or "", **_xy(dst)},
             "dep": dep,
             "arr": arr,
+            **({"shape": shape} if (shape := _path_shape(element)) else {}),
         }
         walking = is_walk((line.get("type") or {}).get("simpleType"))  # Umstiegsfussweg u. a. kommen als "Linie" an
         if line.get("name") and not walking:
