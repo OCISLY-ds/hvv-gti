@@ -891,16 +891,13 @@
     else if (h.box !== body._mapBox) {
       body._mapBox.replaceWith(h.box);
       body._mapBox = h.box;
-      if (h.map) h.map.resize();
+      if (h.map) {
+        h.map.resize();
+        h.map.triggerRepaint(); // nach dem Umhaengen sofort neu zeichnen, kein Aufblitzen
+      }
     }
     h.box.hidden = false;
-    if (h.map) {
-      if (h.sig !== geo.sig && h.map.isStyleLoaded() && h.map.getSource("rt-lines")) {
-        drawRoute(h.map, geo);
-        h.sig = geo.sig;
-      }
-      return;
-    }
+    if (h.map) return; // die Karte bleibt, wie sie ist: neue Zeiten oder Prognosen aendern weder Ansicht noch Linien
     if (h.loading) return;
     h.loading = true;
     h.sig = geo.sig;
@@ -984,6 +981,20 @@
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const minTransfer = () => Number($("min").value) || 0;
+  // Mindest-Puenktlichkeit: Stufen des Reglers in Prozent (0 = aus); Verbindungen darunter werden ausgeblendet
+  const PUNCT_STEPS = [0, 50, 60, 70, 80, 90];
+  const minPunct = () => PUNCT_STEPS[Number($("punct").value) || 0] || 0;
+  const punctLabel = (v) => (v ? `mind. ${v} %` : "keine Vorgabe");
+  const ontimeOf = (r, t) => {
+    const rel = r.reliability || {};
+    const by = (rel.byMinTransfer || {})[String(t)] || rel;
+    return typeof by.ontimePct === "number" ? by.ontimePct : null;
+  };
+  // ausgeblendet: laut Messdaten seltener puenktlich als gewuenscht; ohne Messdaten (null) und die gemerkte Reise bleiben sichtbar
+  const belowPunct = (r, t) => {
+    const need = minPunct(), v = ontimeOf(r, t);
+    return need > 0 && v !== null && v < need && !isSaved(r);
+  };
 
   // ---- Andere Abfahrt derselben Linie ("Auch in 28 min und 48 min") ----
 
@@ -1488,7 +1499,24 @@
       return out.append(m);
     }
     const t = minTransfer();
+    const shown = data.routes.map((r, i) => i).filter((i) => !belowPunct(data.routes[i], t));
+    if (shown.length && !shown.some((i) => state.open.has(i))) state.open.add(shown[0]); // die erste sichtbare Verbindung ist aufgeklappt
+    if (shown.length < data.routes.length) {
+      const hiddenN = data.routes.length - shown.length;
+      const note = node("div", "msg punct-note");
+      note.append(node("span", "", shown.length ? `${hiddenN} ${hiddenN === 1 ? "Verbindung" : "Verbindungen"} unter ${minPunct()} % Pünktlichkeit ausgeblendet. ` : `Alle ${hiddenN} ${hiddenN === 1 ? "Verbindung ist" : "Verbindungen sind"} weniger als ${minPunct()} % pünktlich. `));
+      const reset = node("button", "link", "Filter aufheben");
+      reset.type = "button";
+      reset.addEventListener("click", () => {
+        $("punct").value = "0";
+        $("punct").dispatchEvent(new Event("input"));
+      });
+      note.append(reset);
+      if (shown.length) out.append(note);
+      else return out.append(note);
+    }
     data.routes.forEach((r, i) => {
+      if (!shown.includes(i)) return;
       const trip = node("article", "trip" + (state.open.has(i) ? " open" : "") + (isSaved(r) ? " saved" : ""));
       const banner = isSaved(r) ? statusBanner(r) : null;
       if (banner) trip.append(banner);
@@ -1518,7 +1546,7 @@
         showRouteMap(body, r);
       }
     });
-    pruneRouteMaps(new Set(data.routes.filter((_, i) => state.open.has(i)).map((r) => r.key)));
+    pruneRouteMaps(new Set(data.routes.filter((_, i) => state.open.has(i) && shown.includes(i)).map((r) => r.key)));
   }
 
   function showMessage(title, text, retry) {
@@ -1716,6 +1744,15 @@
     if (saved !== null && /^[0-5]$/.test(saved)) $("min").value = saved;
     const showMin = () => ($("min-val").textContent = minLabel(minTransfer()));
     showMin();
+    const savedPunct = store.get("hvv.minPunct");
+    if (savedPunct !== null && /^[0-5]$/.test(savedPunct)) $("punct").value = savedPunct;
+    const showPunct = () => ($("punct-val").textContent = punctLabel(minPunct()));
+    showPunct();
+    $("punct").addEventListener("input", () => {
+      showPunct();
+      store.set("hvv.minPunct", $("punct").value);
+      if (state.data) renderResults();
+    });
     $("min").addEventListener("input", () => {
       showMin();
       store.set("hvv.minTransfer", String(minTransfer()));

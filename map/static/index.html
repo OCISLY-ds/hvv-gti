@@ -61,6 +61,14 @@
       </label>
     </details>
 
+    <details class="opts">
+      <summary>Pünktlichkeit: <b id="punct-val"></b></summary>
+      <label class="mint">
+        <span class="hint">Blendet Verbindungen aus, die laut den Messdaten seltener pünktlich am Ziel ankommen (höchstens 3 Minuten Verspätung). Verbindungen ohne Messdaten bleiben sichtbar.</span>
+        <input id="punct" type="range" min="0" max="5" step="1" value="0" aria-describedby="punct-val">
+      </label>
+    </details>
+
     <button id="go" type="submit" class="primary">Verbindungen suchen</button>
   </form>
 

@@ -432,3 +432,4 @@ div.more { cursor: default; }
 .xfer .xtext svg { width: 20px; height: 20px; }
 .map-line { pointer-events: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%)); }
 .map-line .lb img { height: 18px; }
+.punct-note { padding: 10px 14px; font-size: 14px; text-align: left; }
