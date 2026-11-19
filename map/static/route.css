@@ -219,7 +219,7 @@ button { cursor: pointer; }
 
 /* ---- Ergebnisse ---- */
 #out { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.age { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 0 6px; font-size: 14px; color: var(--mute); }
+.age { display: flex; align-items: center; justify-content: flex-start; gap: 8px 12px; flex-wrap: wrap; margin: 0 6px; font-size: 14px; color: var(--mute); }
 .age .age-text { min-width: 0; }
 .age b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .age .refresh { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line-ui); border-radius: 22px; background: var(--surface); color: var(--primary); font-size: 14px; font-weight: 600; }
@@ -433,3 +433,16 @@ div.more { cursor: default; }
 .map-line { pointer-events: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%)); }
 .map-line .lb img { height: 18px; }
 .punct-note { padding: 10px 14px; font-size: 14px; text-align: left; }
+
+/* Filter: Zeit, Umsteigezeit und Puenktlichkeit als Chips in einer Zeile; ein aufgeklappter Filter nimmt die ganze Zeile ein */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.filters .opts { margin-top: 0; }
+.filters .flt { flex: 1 1 0; min-width: 0; border: 1.5px solid var(--line-ui); border-radius: 22px; background: var(--surface); padding: 0 12px; }
+.filters .flt[open] { flex-basis: 100%; border-radius: 16px; padding-bottom: 6px; }
+.filters .flt[hidden] { display: none; }
+.flt summary { min-height: 40px; padding: 0; gap: 6px; font-size: 13px; white-space: nowrap; }
+.flt summary::after { display: none; }
+.flt summary .fi { flex: none; width: 15px; height: 15px; }
+.flt summary b { margin-left: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.trip-in { margin-bottom: 2px; font-size: 13px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+.trip-in:empty { display: none; }

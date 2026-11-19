@@ -66,7 +66,7 @@
     ubahn: svg('<rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3.8"/><path d="M8.6 7.8v5.2a3.4 3.4 0 0 0 6.8 0V7.8"/>'),
     train: svg('<path d="M9.5 2.8h5M12 2.8v2"/><rect x="5.5" y="4.8" width="13" height="12.7" rx="3"/><path d="M5.5 11.2h13M8.3 21l1.6-3.5M15.7 21l-1.6-3.5"/><circle cx="9" cy="14.3" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="14.3" r=".8" fill="currentColor" stroke="none"/>'),
     ship: svg('<path d="M4 15.5l1.8 3.7h12.4l1.8-3.7zM7.5 15V9.5h9V15M12 9.5V5.5M9.5 5.5h5"/>'),
-    refresh: svg('<path d="M20 11a8 8 0 0 0-14.5-4.2M4 4.5v3.3h3.3M4 13a8 8 0 0 0 14.5 4.2M20 19.5v-3.3h-3.3"/>'),
+    refresh: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>',
     chevron: svg('<path d="M5.5 9l6.5 6.5L18.5 9"/>'),
     walk: svg('<circle cx="13" cy="4.6" r="1.8" fill="currentColor"/><path d="M9.5 21.5l1.7-6.3-2.3-2.2v-4l-1.8 2.2M13 8.5l1.7 3.2 3 .8M11.2 15.2l3.5 1.6.9 4.7M8.9 9.1l3.6-1.4c.4-.1.9.1 1 .5"/>'),
     swapStop: svg('<path d="M7 7h12M7 7l3-3M7 7l3 3M17 17H5m12 0l-3-3m3 3l-3 3"/>'),
@@ -661,10 +661,32 @@
     return row;
   }
 
+  // "Faehrt in 5 min" ueber der Startzeit; ab einem Tag Abstand nichts (dann zaehlt das Datum der Suche)
+  function tripInText(ts, ride) {
+    if (!ts) return "";
+    const min = Math.round((ts * 1000 - Date.now()) / 60000);
+    if (min >= 1440) return "";
+    if (min < -1) return ride ? "Schon abgefahren" : "Schon gestartet";
+    if (min <= 0) return ride ? "Fährt jetzt" : "Los jetzt";
+    return `${ride ? "Fährt in" : "Los in"} ${dur(min)}`;
+  }
+  function tickIn() {
+    document.querySelectorAll(".trip-in").forEach((el) => {
+      const text = tripInText(Number(el.dataset.ts), !!el.dataset.ride);
+      if (el.textContent !== text) el.textContent = text;
+    });
+  }
+
   function tripHead(r, minTransfer) {
     const head = node("button", "trip-head");
     head.type = "button";
     const dep = r.realDep || r.plannedDep, arr = r.realArr || r.plannedArr;
+    const firstRide = r.legs.length && r.legs[0].line;
+    const inEl = node("div", "trip-in");
+    inEl.dataset.ts = String(dep || "");
+    inEl.dataset.ride = firstRide ? "1" : "";
+    inEl.textContent = tripInText(dep, !!firstRide);
+    head.append(inEl);
     const top = node("div", "trip-top");
     top.append(node("span", "trip-time", `${hhmm(dep)} → ${hhmm(arr)}`), node("span", "trip-dur", dur(r.minutes)));
     top.append(icon("chevron", "trip-chev"));
@@ -984,7 +1006,7 @@
   // Mindest-Puenktlichkeit: Stufen des Reglers in Prozent (0 = aus); Verbindungen darunter werden ausgeblendet
   const PUNCT_STEPS = [0, 50, 60, 70, 80, 90];
   const minPunct = () => PUNCT_STEPS[Number($("punct").value) || 0] || 0;
-  const punctLabel = (v) => (v ? `mind. ${v} %` : "keine Vorgabe");
+  const punctLabel = (v) => (v ? `mind. ${v} %` : "egal");
   const ontimeOf = (r, t) => {
     const rel = r.reliability || {};
     const by = (rel.byMinTransfer || {})[String(t)] || rel;
@@ -1443,13 +1465,13 @@
   function ageRow() {
     const row = node("div", "age");
     row.setAttribute("aria-live", "off"); // der Zaehler darf nicht jede Sekunde vorgelesen werden
-    const text = node("span", "age-text");
-    text.append("Echtzeit-Stand: ", node("b", "age-val", ""));
     const btn = node("button", "refresh");
     btn.type = "button";
-    btn.append(icon("refresh"), node("span", "", "Aktualisieren"));
+    btn.setAttribute("aria-label", "Aktualisieren");
+    btn.title = "Aktualisieren";
+    btn.append(icon("refresh"), node("b", "age-val", ""));
     btn.addEventListener("click", () => search(true));
-    row.append(text, btn);
+    row.append(btn);
     if (state.refreshError) row.append(node("div", "err", state.refreshError));
     return row;
   }
@@ -1764,6 +1786,7 @@
       search();
     });
     setInterval(() => {
+      tickIn();
       tickAge();
       autoRefresh();
     }, 1000);
