@@ -74,3 +74,20 @@ class LegShapeTests(unittest.TestCase):
         self.assertEqual(len(leg_shape({}, leg)) // 2, 2)
         leg = {"line": "S11", "from": self.stop(0), "to": self.stop(1000)}
         self.assertEqual(len(leg_shape(self.tracks(), leg)) // 2, 3)
+
+
+class RailFeaturesTest(unittest.TestCase):
+    def test_only_local_passenger_lines_each_track_once(self):
+        from hvv_gti.geometry import rail_features
+
+        a, b = at(0), at(1000)
+        mid = at(500, 3)
+        tracks = {
+            "s>": {"p": flat(a, mid, b), "l": ["S5", "S3"]},
+            "<s": {"p": flat(b, mid, a), "l": ["S5"]},  # Gegenrichtung: dasselbe Gleis
+            "re": {"p": flat(at(0, 500), at(1000, 500)), "l": ["RE5"]},
+            "bus": {"p": flat(at(0, 900), at(1000, 900)), "l": ["X80", "5"]},
+            "virtual": {"p": flat(at(0, 700), at(1000, 700)), "l": ["U1"], "v": 1},
+        }
+        feats = rail_features(tracks)["features"]
+        self.assertEqual(sorted(f["properties"]["m"] for f in feats), ["R", "S"])

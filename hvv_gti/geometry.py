@@ -106,3 +106,51 @@ def leg_shape(tracks: dict[str, dict], leg: dict, tol_m: float = 200.0) -> list[
             add(best[1])
         add([b["x"], b["y"]])
     return [round(v, 5) for v in out]
+
+
+RAIL_LINE = __import__("re").compile(r"^(?:[SU]\d+|R[BE]\d+)$")  # S-Bahn, U-Bahn, Regionalbahn/-express: Nahverkehr, ohne Fern- und Gueterverkehr
+
+
+def _rdp(points: list[tuple[float, float]], tol: float) -> list[tuple[float, float]]:
+    """Douglas-Peucker (iterativ), tol in Grad."""
+    if len(points) < 3:
+        return points
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (x1, y1), (x2, y2) = points[a], points[b]
+        dx, dy = x2 - x1, y2 - y1
+        norm = (dx * dx + dy * dy) ** 0.5
+        far, far_d = None, tol
+        for i in range(a + 1, b):
+            x, y = points[i]
+            d = abs(dy * (x - x1) - dx * (y - y1)) / norm if norm else ((x - x1) ** 2 + (y - y1) ** 2) ** 0.5
+            if d > far_d:
+                far, far_d = i, d
+        if far is not None:
+            keep[far] = True
+            stack += [(a, far), (far, b)]
+    return [p for p, k in zip(points, keep) if k]
+
+
+def rail_features(tracks: dict[str, dict], tol: float = 0.00004) -> dict:
+    """GeoJSON der Nahverkehrsgleise (S, U, RB, RE) aus der gelernten Gleisgeometrie, jede Strecke nur einmal (Hin- und Rueckrichtung
+    liegen auf demselben Gleis), vereinfacht auf ca. 4 m. Eigenschaft m: S, U oder R."""
+    seen: dict[tuple, dict] = {}
+    for track in tracks.values():
+        lines = [l for l in track.get("l", ()) if RAIL_LINE.match(l)]
+        pts = track.get("p") or []
+        if not lines or len(pts) < 4 or track.get("v"):
+            continue
+        coords = [(round(pts[i], 5), round(pts[i + 1], 5)) for i in range(0, len(pts) - 1, 2)]
+        key = tuple(sorted((coords[0], coords[-1]))) + (len(coords) // 8,)
+        mode = "S" if any(l[0] == "S" for l in lines) else "U" if any(l[0] == "U" for l in lines) else "R"
+        if key in seen:
+            if mode in "SU" and seen[key]["properties"]["m"] == "R":
+                seen[key]["properties"]["m"] = mode
+            continue
+        simple = _rdp(coords, tol)
+        seen[key] = {"type": "Feature", "properties": {"m": mode}, "geometry": {"type": "LineString", "coordinates": [list(p) for p in simple]}}
+    return {"type": "FeatureCollection", "features": list(seen.values())}

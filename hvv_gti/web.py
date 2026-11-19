@@ -27,7 +27,7 @@ from .config import BUS5, Network
 from .icons import CONTENT_TYPES, IconStore
 from .dedupe import drop_ghosts, max_delay, trip_keys
 from .extensions import EXTENSIONS, Seed, extend
-from .geometry import clean, leg_shape
+from .geometry import clean, leg_shape, rail_features
 from .planner import parse_place
 from .signals import SignalIndex
 
@@ -226,6 +226,16 @@ class VehicleFeed:
             if line not in station["l"]:
                 station["l"].append(line)
                 self.version += 1
+
+    def rail_json(self) -> tuple[str, bytes, bytes]:
+        """(Version, JSON, gzip) der Nahverkehrsgleise fuer die Routenkarte; wird je Gleisversion einmal gebaut."""
+        with self._state_lock:
+            cached = getattr(self, "_rail", None)
+            if cached and cached[0] == self.version:
+                return cached
+            body = json.dumps(rail_features(self.tracks), separators=(",", ":")).encode()
+            self._rail = (self.version, f'"r{self.version}-{len(body):x}"', body, gzip.compress(body, 6))
+            return self._rail
 
     def shape(self, leg: dict) -> list[float]:
         """Verlauf einer Fahrt der Verbindungssuche entlang der gelernten Gleise (fuer die Routenkarte)."""
@@ -552,6 +562,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, b"ok", "text/plain")
             if path.startswith("/icon/"):
                 return self._icon(path[len("/icon/"):])
+            if path == "/tiles/rail.json":  # Nahverkehrsgleise (S, U, RB, RE) aus der gelernten Gleisgeometrie
+                _, etag, body, packed = self.app.feed.rail_json()
+                headers = {"ETag": etag, "Cache-Control": "public, max-age=3600", "Vary": "Accept-Encoding"}
+                if self.headers.get("If-None-Match") == etag:
+                    return self._send(304, b"", "application/geo+json", headers)
+                if "gzip" in self.headers.get("Accept-Encoding", ""):
+                    headers["Content-Encoding"] = "gzip"
+                    return self._send(200, packed, "application/geo+json", headers)
+                return self._send(200, body, "application/geo+json", headers)
             if path == "/tiles/places.json":  # Orts- und Stadtteilnamen (scripts/extract_places.py), von der Routenkarte beschriftet
                 return self._file(self.app.data_dir / "places.json", "application/json", cache="public, max-age=86400")
             if path == "/tiles/hamburg.pmtiles":

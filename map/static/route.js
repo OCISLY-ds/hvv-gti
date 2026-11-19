@@ -845,7 +845,7 @@
       : { bg: "#f2efe9", green: "#d3e6c3", ind: "#e4e1da", land: "#ebe8e1", water: "#a9d3f0", bld: "#dedad2", mot: "#ffffff", main: "#ffffff", road: "#ffffff", rail: "#5d6b7d", railDash: "#f2efe9" };
     return {
       version: 8,
-      sources: { hh: { type: "vector", url: "pmtiles://" + new URL("/tiles/hamburg.pmtiles", location.href).href, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' } },
+      sources: { rail: { type: "geojson", data: new URL("/tiles/rail.json", location.href).href }, hh: { type: "vector", url: "pmtiles://" + new URL("/tiles/hamburg.pmtiles", location.href).href, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' } },
       layers: [
         { id: "bg", type: "background", paint: { "background-color": c.bg } },
         L("landuse", "fill", "landuse", { "fill-color": ["match", ["get", "class"], ["park", "wood", "grass", "scrub", "national_park"], c.green, ["industrial", "parking"], c.ind, c.land] }),
@@ -856,16 +856,9 @@
           "line-color": ["match", ["get", "class"], ["motorway", "motorway_link", "main"], c.main, c.road], // Autobahnen sind nicht hervorgehoben, die Bahn schon
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 12, 1.2, 16, 4],
         }, { filter: ["!", ["in", ["get", "class"], ["literal", ["path", "major_rail", "minor_rail"]]]] }),
-        // Bahnstrecken (S-, U-, Regional- und Fernbahn): kraeftige Linie mit hellen Querstrichen, Strassenbahn schmaler
-        L("rail", "line", "road", {
-          "line-color": c.rail,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.4, 12, 2.4, 16, 5],
-        }, { filter: ["in", ["get", "class"], ["literal", ["major_rail", "minor_rail"]]], layout: { "line-cap": "butt" } }),
-        L("rail-dash", "line", "road", {
-          "line-color": c.railDash,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 1.2, 16, 2.6],
-          "line-dasharray": [3, 3],
-        }, { filter: ["==", ["get", "class"], "major_rail"] }),
+        // Nahverkehrsgleise (S, U, RB, RE) aus der Gleisgeometrie des Servers, schon in der Uebersicht sichtbar; Gueter- und Fernverkehr fehlen bewusst
+        { id: "rail", type: "line", source: "rail", paint: { "line-color": c.rail, "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.2, 12, 2.4, 16, 5] }, layout: { "line-cap": "butt", "line-join": "round" } },
+        { id: "rail-dash", type: "line", source: "rail", paint: { "line-color": c.railDash, "line-width": ["interpolate", ["linear"], ["zoom"], 7, 0.5, 12, 1.2, 16, 2.6], "line-dasharray": [3, 3] }, layout: { "line-join": "round" } },
       ],
     };
   }
