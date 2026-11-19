@@ -214,7 +214,14 @@ Aufzug) und rechnet mit Dijkstra den Weg zwischen allen Bahnsteigen. `src` am We
 geschätzt (`estimated`) ist. Wie gut ein Bahnhof wird, hängt an OSM: fehlende Bahnsteige, Treppen oder Aufzüge sind Lücken im Modell.
 `scripts/preview_station.py` zeichnet ein Modell ohne Browser als PNG zur Kontrolle der Daten.
 
-Stand: Hauptbahnhof (110 Wege, alle berechnet) und Berliner Tor (12 berechnet, 8 geschätzt). Die Seite wurde noch in keinem Browser gesehen.
+Die Szene ist ein Diorama in 3D: eine Bodenplatte (Ebene 0) mit Straßen samt Namen, Gebäuden in ihrer Höhe, Bäumen, Grünflächen, Wasser,
+Orten und Eingängen, darunter die Ebenen des Bahnhofs. `Umgebung` blendet die Platte voll, gedämpft (Untergrund bleibt sichtbar) oder ganz aus.
+Die Umgebung kommt aus `hvv_gti/stationctx.py` (`map/seed/stations/<id>.ctx.json`), die Beschriftung sind HTML-Marken, deren Höhe beim
+Projizieren nachgeführt wird. Die Kamera fährt auf den gewählten Umstieg; dunkel/hell folgt dem System.
+
+Stand: Hauptbahnhof (110 Wege, alle berechnet), Berliner Tor (12 berechnet, 8 geschätzt), Altona (30), Jungfernstieg (2, Bahnsteige ohne
+Gleisnummern), Barmbek (ohne verwertbare Bahnsteige in OSM). Getestet mit Headless-Chromium (Software-WebGL) auf dem Pi, Screenshots dunkel/hell
+und im Handy-Format; Flüssigkeit auf echten Geräten ist unbekannt (die Umgebung hat einige tausend Flächen).
 
 ## Nutzungsbedingungen
 

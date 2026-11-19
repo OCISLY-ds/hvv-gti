@@ -12,6 +12,7 @@
   --on-primary: #ffffff;
   --path: #d4141c;
   --shadow: 0 1px 2px rgb(20 40 43 / 8%), 0 4px 14px rgb(20 40 43 / 8%);
+  --halo: rgb(240 245 245 / 92%); --street: #4a5a5d; --poi: #9c3a82; --pin: #e07bc1; --pin-ring: #fff; --ent: #0b6b73; --plat: #5f6f73; --S: #1f9a5a; --U: #1d6fc0; --R: #c4413b;
   --radius: 18px;
   --tap: 48px;
   --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif;
@@ -29,13 +30,25 @@
     --on-primary: #062a2d;
     --path: #ff6b70;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
+    --halo: rgb(15 18 27 / 92%); --street: #c9cde0; --poi: #e8a4d4; --pin-ring: #1a1d2a; --ent: #5cc8cf; --S: #33b873; --U: #3d92e8; --R: #e0645e;
   }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--ink); font: 16px/1.4 var(--font); }
 #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
-#map { min-height: 0; background: var(--bg); touch-action: none; }
+#stage { position: relative; min-height: 0; background: var(--bg); }
+#map { position: absolute; inset: 0; touch-action: none; }
+#labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; font-size: 12px; line-height: 1.15; }
+.lbl { position: absolute; left: 0; top: 0; white-space: nowrap; display: flex; align-items: center; gap: 5px; will-change: transform; text-shadow: 0 0 3px var(--halo), 0 0 3px var(--halo), 0 0 6px var(--halo); }
+.lbl.street { color: var(--street); font-size: 11px; letter-spacing: .02em; font-weight: 700; }
+.lbl.poi, .lbl.ent { color: var(--poi); font-weight: 700; }
+.lbl i { width: 14px; height: 14px; border-radius: 50%; background: var(--pin); border: 2px solid var(--pin-ring); flex: none; box-shadow: 0 1px 3px rgb(0 0 0 / 45%); }
+.lbl.poi.c-food i { background: #ef9a3c; } .lbl.poi.c-shop i { background: #5b8def; } .lbl.poi.c-culture i { background: #e07bc1; } .lbl.poi.c-hotel i { background: #9b7be0; }
+.lbl.poi.c-health i { background: #e8625c; } .lbl.poi.c-money i { background: #43b581; } .lbl.poi.c-bus i { background: #3d92e8; border-radius: 4px; } .lbl.poi.c-info i { background: #8aa0a8; }
+.lbl.ent i { background: var(--ent); border-radius: 4px; width: 12px; height: 12px; }
+.lbl.plat { padding: 2px 8px; border-radius: 999px; background: var(--plat); color: #fff; font-weight: 700; font-size: 12px; text-shadow: none; box-shadow: 0 1px 4px rgb(0 0 0 / 40%); border: 2px solid rgb(255 255 255 / 85%); }
+.lbl.plat.m-S { background: var(--S); } .lbl.plat.m-U { background: var(--U); } .lbl.plat.m-R { background: var(--R); }
 #sheet {
   background: var(--surface); color: var(--ink); max-height: 46dvh; overflow: auto; overscroll-behavior: contain;
   padding: 12px max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));

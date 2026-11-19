@@ -12,21 +12,15 @@
 </head>
 <body>
 <div id="app">
-  <div id="map" role="application" aria-label="3D-Modell des Bahnhofs"></div>
+  <div id="stage">
+    <div id="map" role="application" aria-label="3D-Modell des Bahnhofs"></div>
+    <div id="labels" aria-hidden="true"></div>
+  </div>
   <aside id="sheet" aria-label="Bahnhof und Umstieg">
     <header>
       <h1>Bahnhof in 3D</h1>
       <div id="stations" class="chips" role="tablist" aria-label="Bahnhof wählen"></div>
     </header>
-    <section aria-labelledby="h-levels">
-      <h2 id="h-levels">Ebene</h2>
-      <div id="levels" class="chips" role="group" aria-label="Ebene zeigen"></div>
-      <label class="row">
-        <span>Ebenenabstand</span>
-        <input id="gap" type="range" min="1" max="4" step="0.25" value="2" aria-label="Abstand zwischen den Ebenen">
-      </label>
-      <label class="row check"><input id="bld" type="checkbox"><span>Gebäude zeigen</span></label>
-    </section>
     <section aria-labelledby="h-way">
       <h2 id="h-way">Umstieg</h2>
       <div class="pair">
@@ -34,6 +28,22 @@
         <label>Nach <select id="to"></select></label>
       </div>
       <div id="way" aria-live="polite"></div>
+    </section>
+    <section aria-labelledby="h-levels">
+      <h2 id="h-levels">Ebene</h2>
+      <div id="levels" class="chips" role="group" aria-label="Ebene zeigen"></div>
+      <label class="row">
+        <span>Ebenenabstand</span>
+        <input id="gap" type="range" min="1" max="4" step="0.25" value="2" aria-label="Abstand zwischen den Ebenen">
+      </label>
+      <div class="row">
+        <span id="h-ctx">Umgebung</span>
+        <div id="ctx" class="chips" role="group" aria-labelledby="h-ctx">
+          <button type="button" data-mode="full" aria-pressed="false">Voll</button>
+          <button type="button" data-mode="dim" aria-pressed="true">Gedämpft</button>
+          <button type="button" data-mode="off" aria-pressed="false">Aus</button>
+        </div>
+      </div>
     </section>
     <p id="note" class="note"></p>
   </aside>

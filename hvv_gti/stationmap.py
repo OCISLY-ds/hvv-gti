@@ -25,7 +25,7 @@ LIFT_BASE_S = 22.0  # Warten + Tuer + Fahrt
 LIFT_PER_LEVEL_S = 6.0
 SNAP_M = 2.5
 PORTAL_M = 8.0
-PLATFORM_HALF_WIDTH_M = 4.0  # offene OSM-Bahnsteigkanten werden zu einem Streifen dieser halben Breite
+PLATFORM_HALF_WIDTH_M = 3.0  # offene OSM-Bahnsteigkanten werden zu einem Streifen dieser halben Breite
 WALK_HALF_WIDTH_M = 1.3
 TRACK_HALF_WIDTH_M = 0.75
 WALKWAYS = {"footway", "corridor", "pedestrian", "path", "steps", "elevator"}
@@ -96,6 +96,50 @@ def offset_ring(points: list[tuple[float, float]], half: float) -> list[tuple[fl
     return ring + [ring[0]]
 
 
+def clip_segment(a, b, box, margin):
+    """Stueck der Strecke a-b innerhalb des (um `margin` erweiterten) Rechtecks `box` = (x0, y0, x1, y1) (Liang-Barsky) oder None."""
+    x0, y0, x1, y1 = box[0] - margin, box[1] - margin, box[2] + margin, box[3] + margin
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, a[0] - x0), (dx, x1 - a[0]), (-dy, a[1] - y0), (dy, y1 - a[1])):
+        if p == 0:
+            if q < 0:
+                return None
+            continue
+        r = q / p
+        if p < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return None
+    return (a[0] + t0 * dx, a[1] + t0 * dy), (a[0] + t1 * dx, a[1] + t1 * dy)
+
+
+def clip_runs(pts, box, margin=15.0):
+    """Zusammenhaengende Stuecke einer Linie innerhalb von `box` (ohne Box: die ganze Linie)."""
+    if box is None:
+        return [pts] if len(pts) >= 2 else []
+    runs, run = [], []
+    for a, b in zip(pts, pts[1:]):
+        piece = clip_segment(a, b, box, margin)
+        if piece is None:
+            if len(run) >= 2:
+                runs.append(run)
+            run = []
+            continue
+        start, end = piece
+        if run and math.dist(run[-1], start) < 1e-6:
+            run.append(end)
+        else:
+            if len(run) >= 2:
+                runs.append(run)
+            run = [start, end]
+    if len(run) >= 2:
+        runs.append(run)
+    return runs
+
+
 def _point_segment(p, a, b) -> float:
     """Abstand eines Punkts von der Strecke a-b."""
     dx, dy = b[0] - a[0], b[1] - a[1]
@@ -148,6 +192,7 @@ class Station:
         self.frame = Frame(*center)
         self.center = center
         self.box = None
+        self.bounds = bounds
         if bounds:
             south, west, north, east = bounds
             (x1, y1), (x2, y2) = self.frame.xy(west, south), self.frame.xy(east, north)
@@ -170,48 +215,9 @@ class Station:
             return True
         return self.box[0] - margin <= p[0] <= self.box[2] + margin and self.box[1] - margin <= p[1] <= self.box[3] + margin
 
-    def _clip(self, a, b, margin):
-        """Stueck der Strecke a-b innerhalb des (um `margin` erweiterten) Bahnhofsbereichs (Liang-Barsky) oder None."""
-        x0, y0, x1, y1 = self.box[0] - margin, self.box[1] - margin, self.box[2] + margin, self.box[3] + margin
-        dx, dy = b[0] - a[0], b[1] - a[1]
-        t0, t1 = 0.0, 1.0
-        for p, q in ((-dx, a[0] - x0), (dx, x1 - a[0]), (-dy, a[1] - y0), (dy, y1 - a[1])):
-            if p == 0:
-                if q < 0:
-                    return None
-                continue
-            r = q / p
-            if p < 0:
-                t0 = max(t0, r)
-            else:
-                t1 = min(t1, r)
-            if t0 > t1:
-                return None
-        return (a[0] + t0 * dx, a[1] + t0 * dy), (a[0] + t1 * dx, a[1] + t1 * dy)
-
     def _runs(self, pts: list[tuple[float, float]], margin: float = 15.0) -> list[list[tuple[float, float]]]:
         """Zusammenhaengende Stuecke einer Linie innerhalb des Bahnhofsbereichs, an dessen Rand (plus `margin` m) abgeschnitten."""
-        if self.box is None:
-            return [pts] if len(pts) >= 2 else []
-        runs: list[list[tuple[float, float]]] = []
-        run: list[tuple[float, float]] = []
-        for a, b in zip(pts, pts[1:]):
-            piece = self._clip(a, b, margin)
-            if piece is None:
-                if len(run) >= 2:
-                    runs.append(run)
-                run = []
-                continue
-            start, end = piece
-            if run and math.dist(run[-1], start) < 1e-6:
-                run.append(end)
-            else:
-                if len(run) >= 2:
-                    runs.append(run)
-                run = [start, end]
-        if len(run) >= 2:
-            runs.append(run)
-        return runs
+        return clip_runs(pts, self.box, margin)
 
     def _xy_geom(self, el: dict) -> list[tuple[float, float]]:
         return [self.frame.xy(p["lon"], p["lat"]) for p in el["geometry"]]
@@ -527,6 +533,7 @@ class Station:
             "id": self.id,
             "name": self.name,
             "center": [round(self.center[0], 6), round(self.center[1], 6)],
+            **({"bbox": [self.bounds[1], self.bounds[0], self.bounds[3], self.bounds[2]]} if self.bounds else {}),  # Westen, Sueden, Osten, Norden
             "levels": levels,
             "features": {"type": "FeatureCollection", "features": self.features},
             "platforms": [{k: v for k, v in p.items() if k != "way"} | {"id": p["id"]} for p in self.platforms],

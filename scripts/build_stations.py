@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from hvv_gti.stationctx import Context  # noqa: E402
 from hvv_gti.stationmap import Station  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,13 +51,35 @@ QUERY = """[out:json][timeout:90];
 out body geom;"""
 
 
-def fetch(sid: str, bbox: tuple, offline: bool) -> list[dict]:
-    cache = CACHE / f"{sid}.json"
+CONTEXT_QUERY = """[out:json][timeout:120];
+(
+  way["highway"]({b});
+  way["building"]({b});
+  way["building:part"]({b});
+  node["natural"="tree"]({b});
+  way["natural"~"^(tree_row|wood|water|scrub|grassland)$"]({b});
+  way["leisure"~"^(park|garden|playground|common|pitch)$"]({b});
+  way["landuse"~"^(grass|forest|recreation_ground|village_green|meadow|basin)$"]({b});
+  way["waterway"="riverbank"]({b});
+  node["name"]["amenity"]({b});
+  node["name"]["shop"]({b});
+  node["name"]["tourism"]({b});
+  node["name"]["historic"]({b});
+  node["highway"="bus_stop"]({b});
+  way["name"]["amenity"~"^(theatre|cinema|museum|arts_centre|library|hospital|townhall)$"]({b});
+  way["name"]["tourism"]({b});
+  way["name"]["historic"]({b});
+);
+out body geom;"""
+
+
+def fetch(sid: str, bbox: tuple, offline: bool, query: str = QUERY, suffix: str = "") -> list[dict]:
+    cache = CACHE / f"{sid}{suffix}.json"
     if cache.exists():
         return json.loads(cache.read_text())["elements"]
     if offline:
         raise SystemExit(f"{sid}: kein Cache (--offline)")
-    data = urllib.parse.urlencode({"data": QUERY.format(b=",".join(str(x) for x in bbox))}).encode()
+    data = urllib.parse.urlencode({"data": query.format(b=",".join(str(x) for x in bbox))}).encode()
     for attempt in range(6):
         server = SERVERS[attempt % len(SERVERS)]
         try:
@@ -92,6 +115,11 @@ def main() -> None:
         station = Station(sid, name, ((w + e) / 2, (s + n) / 2), elements, bounds=(s, w, n, e))
         model = station.model()
         (OUT / f"{sid}.json").write_text(json.dumps(model, separators=(",", ":"), ensure_ascii=False))
+        if "--no-context" not in sys.argv:
+            context = Context(((w + e) / 2, (s + n) / 2), fetch(sid, (s, w, n, e), offline, CONTEXT_QUERY, "-ctx"), (s, w, n, e)).model()
+            (OUT / f"{sid}.ctx.json").write_text(json.dumps(context, separators=(",", ":"), ensure_ascii=False))
+            print(f"  Umgebung: {len(context['roads'])} Strassen, {len(context['buildings'])} Gebaeude, {len(context['trees'])} Baeume, "
+                  f"{len(context['green'])} Gruen, {len(context['water'])} Wasser, {len(context['pois'])} Orte, {len(context['labels'])} Strassennamen")
         size = (OUT / f"{sid}.json").stat().st_size // 1024
         index.append(_entry(sid, name, model))
         print(f"{name}: {len(model['platforms'])} Bahnsteige, Ebenen {model['levels']}, {len(model['features']['features'])} Objekte, "
