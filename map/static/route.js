@@ -577,12 +577,11 @@
     body.append(toggle);
 
     const st = leg.stats;
-    if (st && (st.alight || known(st.cancelRate))) {
-      const bits = [];
-      if (st.alight) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
-      if (known(st.cancelRate)) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
-      body.append(node("div", "stat", bits.join(" · ")));
-    }
+    const MIN_N = 100; // kleinere Stichproben sagen zu wenig: dann gar nichts zeigen
+    const bits = [];
+    if (st && st.alight && st.alight.n >= MIN_N) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
+    if (st && known(st.cancelRate) && st.cancelN >= MIN_N) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
+    if (bits.length) body.append(node("div", "stat", bits.join(" · ")));
 
     if (leg.origin) details.append(node("div", "info", `Fahrt ab ${leg.origin}`));
     for (const stop of leg.stops || []) {
@@ -611,7 +610,7 @@
     if (tr.waitMin - walk > 0) parts.push(`${dur(tr.waitMin - walk)} warten`);
     if (!parts.length) parts.push("keine Wartezeit");
     const text = node("div", "xtext");
-    text.append(icon("swapStop"), node("span", "", `Steige um (${parts.join(", ")})`));
+    text.append(icon("swapStop"), node("span", "", parts.join(", ").replace(/^./, (c) => c.toUpperCase())));
     body.append(text);
     const chips = node("div", "xchips");
     const catchPct = tr.catchByMin ? tr.catchByMin[String(minTransfer)] : undefined;
