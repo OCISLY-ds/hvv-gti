@@ -630,13 +630,14 @@
       el.onerror = () => reject(new Error(src));
       document.head.append(el);
     });
-    if (!document.querySelector('link[href$="maplibre-gl.css"]')) {
-      const css = document.createElement("link"); // erst mit der Karte laden, die Startseite braucht das Stylesheet nicht
-      css.rel = "stylesheet";
-      css.href = "vendor/maplibre-gl.css";
-      document.head.append(css);
-    }
-    mapLib = script("vendor/maplibre-gl.js").then(() => script("vendor/pmtiles.js")).then(() => {
+    const css = new Promise((resolve) => {
+      const el = document.createElement("link"); // erst mit der Karte laden, die Startseite braucht das Stylesheet nicht
+      el.rel = "stylesheet";
+      el.href = "vendor/maplibre-gl.css";
+      el.onload = el.onerror = resolve; // ohne Stylesheet laeuft die Karte trotzdem, nur unschoener
+      document.head.append(el);
+    });
+    mapLib = Promise.all([css, script("vendor/maplibre-gl.js").then(() => script("vendor/pmtiles.js"))]).then(() => {
       maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
     });
     mapLib.catch(() => (mapLib = null));

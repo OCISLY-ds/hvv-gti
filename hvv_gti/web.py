@@ -638,7 +638,23 @@ class Handler(BaseHTTPRequestHandler):
         target = (root / rel).resolve()
         if root not in target.parents and target != root:
             return self._send(404, b"not found", "text/plain")
-        self._file(target, mimetypes.guess_type(target.name)[0] or "application/octet-stream", cache="no-cache")
+        ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        if not target.is_file():
+            return self._send(404, b"not found", "text/plain")
+        stat = target.stat()
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        # vendor/ und Icons aendern sich praktisch nie (1 MB MapLibre nicht bei jedem Aufruf neu laden); alles andere wird nur nachgefragt (304)
+        cache = "public, max-age=86400" if rel.startswith("vendor/") or rel.endswith((".png", ".svg")) else "no-cache"
+        headers = {"ETag": etag, "Cache-Control": cache, "Vary": "Accept-Encoding"}
+        if self.headers.get("If-None-Match") == etag:
+            return self._send(304, b"", ctype, headers)
+        body = target.read_bytes() if stat.st_size <= STATIC_GZIP_MAX else None
+        if body is not None and ctype.split(";")[0] in COMPRESSIBLE and len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = _gzipped(target, etag, body)
+            headers["Content-Encoding"] = "gzip"
+        if body is None:
+            return self._file(target, ctype, cache=cache)
+        self._send(200, body, ctype, headers)
 
     def _file(self, path: Path, content_type: str, *, ranged: bool = False, cache: str = "no-cache") -> None:
         if not path.is_file():
@@ -680,6 +696,20 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
+
+
+STATIC_GZIP_MAX = 2_000_000
+COMPRESSIBLE = {"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml", "application/manifest+json", "application/x-javascript"}
+_GZ_CACHE: dict[str, tuple[str, bytes]] = {}  # Pfad -> (ETag, komprimierter Inhalt): jede Datei nur einmal packen
+
+
+def _gzipped(path: Path, etag: str, body: bytes) -> bytes:
+    hit = _GZ_CACHE.get(str(path))
+    if hit and hit[0] == etag:
+        return hit[1]
+    packed = gzip.compress(body, 6)
+    _GZ_CACHE[str(path)] = (etag, packed)
+    return packed
 
 
 PROXY_NETWORKS = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")]  # Adressen, hinter denen ein Proxy steht

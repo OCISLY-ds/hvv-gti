@@ -1,3 +1,4 @@
+import gzip
 import json
 import tempfile
 import time
@@ -350,6 +351,7 @@ class PlannerOnlyServerTest(unittest.TestCase):
         feed = web.VehicleFeed(FakeClient({"journeys": []}), Path(tmp.name))
         static = Path(tmp.name) / "static"
         static.mkdir()
+        self._static_dir = static
         for name in ("index.html", "live.html", "app.js"):
             (static / name).write_text(name)
         app = web.MapApp(feed, icons.IconStore(Path(tmp.name) / "icons", client), static, Path(tmp.name), Planner(client, Reliability(None)), 100, live=live)
@@ -379,6 +381,31 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["places"][0]["type"], "ADDRESS")
         self.assertEqual([path for path, _, _ in gti.requests if "getVehicleMap" in path], [])
+
+    def test_static_files_are_validated_cached_and_compressed(self):
+        import urllib.error
+        import urllib.request
+
+        base, _, _ = self._serve(live=False)
+        (Path(self._static_dir) / "vendor").mkdir(exist_ok=True)
+        (Path(self._static_dir) / "vendor" / "lib.js").write_text("x" * 5000)
+        (Path(self._static_dir) / "route.js").write_text("y" * 5000)
+
+        def fetch(path, **headers):
+            req = urllib.request.Request(base + path, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status, dict(r.headers), r.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, dict(exc.headers), b""
+
+        status, headers, body = fetch("/route.js", **{"Accept-Encoding": "gzip"})
+        self.assertEqual((status, headers["Content-Encoding"], headers["Cache-Control"]), (200, "gzip", "no-cache"))
+        self.assertEqual(gzip.decompress(body), b"y" * 5000)
+        self.assertEqual(fetch("/route.js", **{"If-None-Match": headers["ETag"]})[0], 304)
+        status, headers, body = fetch("/route.js")  # ohne Accept-Encoding unkomprimiert
+        self.assertEqual((status, headers.get("Content-Encoding"), body), (200, None, b"y" * 5000))
+        self.assertEqual(fetch("/vendor/lib.js")[1]["Cache-Control"], "public, max-age=86400")
 
     def test_alternatives_and_reroute_endpoints_validate_their_input(self):
         import urllib.error
