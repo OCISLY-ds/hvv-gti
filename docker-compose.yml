@@ -64,3 +64,27 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
+
+  # Cloudflare Tunnel: ausgehende Verbindung zu Cloudflare, damit der Planer unter https://<eigene Domain> ohne Port und ohne
+  # Fritzbox-Freigabe erreichbar ist. Startet nur mit dem Profil "tunnel" und TUNNEL_TOKEN in .env (Einrichtung: docs/cloudflare-tunnel.md).
+  # Im Cloudflare-Dashboard zeigt der Public Hostname auf http://127.0.0.1:8090 (Host-Netz).
+  hvv-tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: hvv-tunnel
+    restart: unless-stopped
+    network_mode: host
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
