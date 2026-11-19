@@ -289,7 +289,20 @@ def _summary(dist: dict | None) -> dict | None:
         "avgMin": round(sum(values) / len(values) / 60, 1),
         "scope": dist["scope"],
         "window": dist["window"],
+        "hist": _histogram(values),
     }
+
+
+HIST_EDGES_S = (0, 60, 180, 300, 600, 900)  # Obergrenzen der Klassen: <= 0, <= 1, <= 3, <= 5, <= 10, <= 15 min, darueber
+
+
+def _histogram(values: list[float]) -> list[float]:
+    """Anteil (%) der Messwerte je Verspaetungsklasse (siehe HIST_EDGES_S, letzte Klasse: mehr als 15 min)."""
+    counts = [0] * (len(HIST_EDGES_S) + 1)
+    for v in values:
+        counts[next((i for i, edge in enumerate(HIST_EDGES_S) if v <= edge), len(HIST_EDGES_S))] += 1
+    total = len(values) or 1
+    return [round(100 * c / total, 1) for c in counts]
 
 
 # ---- GTI: Stationen, Abfahrten, Routen ----
@@ -820,7 +833,22 @@ def notice_applies(summary: str, ride_stops: list[str | None]) -> bool:
     if arrow:
         words = arrow.group(2).split()
         return passes(arrow.group(1)) and any(passes(" ".join(words[:n])) for n in (1, 2, 3) if len(words) >= n)
+    if ACCESS.search(summary):
+        return access_applies(summary, ride_stops)
     return True
+
+
+ACCESS = re.compile(r"barrierefrei|stufenfrei|aufzug|fahrstuhl|rolltreppe|rollstuhl", re.I)
+
+
+def access_applies(summary: str, ride_stops: list[str | None]) -> bool:
+    """Meldungen zu Aufzuegen und Barrierefreiheit betreffen nur Halte, an denen man ein- oder aussteigt. Nennt der Text nur einen
+    Zwischenhalt der Fahrt (etwa Heimfeld bei S5 Dammtor - Neugraben), faehrt man dort lediglich durch und die Meldung ist unwichtig."""
+    named = [stop for stop in ride_stops if stop and re.search(r"(?<!\w)" + re.escape(re.split(r"\s*\(", stop)[0].strip()) + r"(?!\w)", summary, re.I)]
+    if not named:
+        return True  # nennt keinen Halt dieser Fahrt: im Zweifel zeigen
+    ends = [ride_stops[0], ride_stops[-1]]
+    return any(_same_stop(stop, end) for stop in named for end in ends if end)
 
 
 def notice_info(note: dict, summary: str) -> dict:

@@ -464,3 +464,27 @@ class WalkAndReverseTests(unittest.TestCase):
         far = lambda body: {"returnCode": "OK", "results": [{"name": "Weit weg", "city": "Stade", "type": "STATION", "distance": 900}] if body["theName"]["type"] == "STATION" else []}
         with FakeGti(responses={"checkName": far}) as gti:
             self.assertIsNone(Planner(client_for(gti), Reliability(None)).reverse(9.5086, 53.5742))
+
+
+class AccessNoticeTest(unittest.TestCase):
+    STOPS = ["Dammtor", "Sternschanze", "Heimfeld", "Neugraben"]
+
+    def test_only_stations_where_you_board_or_alight_matter(self):
+        from hvv_gti.planner import notice_applies
+
+        self.assertFalse(notice_applies("Kein barrierefreier Zugang zur S-Bahn in Heimfeld. Bitte nutzen Sie die Buslinie 42.", self.STOPS))
+        self.assertTrue(notice_applies("Neugraben: Aufzug zu Gleis 2/3 laengerfristig ausser Betrieb", self.STOPS))
+        self.assertTrue(notice_applies("Aufzug am Dammtor gesperrt", self.STOPS))
+        self.assertTrue(notice_applies("Bis 22.11. hohes Fahrgastaufkommen erwartet.", self.STOPS))  # keine Barrierefreiheit: unveraendert
+        self.assertTrue(notice_applies("Aufzuege im Netz teils gestoert", self.STOPS))  # nennt keinen Halt: im Zweifel zeigen
+
+
+class HistogramTest(unittest.TestCase):
+    def test_classes_sum_to_100_and_follow_the_delay(self):
+        from hvv_gti.planner import _histogram
+
+        hist = _histogram([-30, 0, 30, 120, 200, 400, 1000])
+        self.assertEqual(len(hist), 7)
+        self.assertAlmostEqual(sum(hist), 100, delta=0.3)
+        self.assertEqual(hist[0], round(100 * 2 / 7, 1))  # <= 0 min
+        self.assertEqual(hist[-1], round(100 / 7, 1))  # > 15 min

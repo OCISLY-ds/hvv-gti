@@ -440,10 +440,10 @@ div.more { cursor: default; }
 .route-map { position: relative; height: 240px; margin: 0 0 10px; border-radius: 14px; overflow: hidden; background: var(--sunken); }
 .route-map[hidden] { display: none; }
 .route-map .maplibregl-canvas { outline: none; }
-.map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #2b1a1c; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
+.map-flag { z-index: 20; padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #2b1a1c; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
 .map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #2b1a1c; }
 .map-flag.end { background: var(--accent); color: var(--on-accent); }
-.place { pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #5a4b4d; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
+.place { z-index: 1; pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #5a4b4d; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
 .route-map.dark .place { color: #9fb0c8; text-shadow: 0 0 3px #1b2636, 0 0 3px #1b2636, 0 0 2px #1b2636; }
 .place.c, .place.t { font-size: 14px; font-weight: 700; }
 .place.s { letter-spacing: 0.02em; }
@@ -456,7 +456,7 @@ div.more { cursor: default; }
 .xfer .body { padding: 6px 0; }
 .xfer .xtext { font-size: 14px; color: var(--mute); }
 .xfer .xtext svg { width: 20px; height: 20px; }
-.map-line { pointer-events: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%)); }
+.map-line { z-index: 10; pointer-events: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%)); }
 .map-line .lb img { height: 18px; }
 .punct-note { padding: 10px 14px; font-size: 14px; text-align: left; }
 
@@ -475,3 +475,17 @@ div.more { cursor: default; }
 .theme-btn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1.5px solid var(--line-ui); border-radius: 50%; background: var(--surface); color: var(--ink); }
 .theme-btn svg { width: 18px; height: 18px; }
 .theme-btn:active { background: var(--sunken); }
+
+/* Statistik zum Antippen mit Verteilung als Balken */
+.stat-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 0; border: 0; background: none; text-align: left; font: inherit; color: var(--mute); cursor: pointer; }
+.stat-btn svg { flex: none; width: 16px; height: 16px; transition: transform 0.15s; }
+.stat-btn.open svg { transform: rotate(180deg); }
+.stat-chart { margin: 2px 0 8px; padding: 10px 12px; border-radius: 12px; background: var(--sunken); }
+.stat-chart[hidden] { display: none; }
+.sc-h { margin: 4px 0 6px; font-size: 12px; font-weight: 700; color: var(--ink); }
+.sc-h:first-child { margin-top: 0; }
+.sc-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 48px; align-items: center; gap: 8px; margin: 3px 0; font-size: 12px; color: var(--mute); }
+.sc-bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.sc-fill { display: block; height: 100%; border-radius: 5px; }
+.sc-fill.good { background: var(--good-fill, #80ba27); } .sc-fill.mid { background: var(--mid-fill, #e4a519); } .sc-fill.bad { background: var(--bad-fill, #e63328); }
+.sc-v { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }

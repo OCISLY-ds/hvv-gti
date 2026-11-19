@@ -506,6 +506,34 @@
       });
   }
 
+  // Verteilung der Verspaetungen bei Ankunft (Klassen wie planner.HIST_EDGES_S) und die Ausfallquote als einfache Balken
+  const HIST_LABELS = ["früh / pünktlich", "bis 1 min", "bis 3 min", "bis 5 min", "bis 10 min", "bis 15 min", "über 15 min"];
+  const HIST_TONES = ["good", "good", "good", "mid", "mid", "bad", "bad"]; // bis 3 min gilt als pünktlich
+  function statChart(late, cancelPct) {
+    if (!(late && Array.isArray(late.hist)) && !known(cancelPct)) return null;
+    const box = node("div", "stat-chart");
+    const row = (label, value, tone, max) => {
+      const r = node("div", "sc-row");
+      const bar = node("span", "sc-bar");
+      const fill = node("span", "sc-fill " + tone);
+      fill.style.width = `${Math.max(value > 0 ? 2 : 0, Math.min(100, (value / max) * 100))}%`;
+      bar.append(fill);
+      r.append(node("span", "sc-l", label), bar, node("span", "sc-v", pct(num(value))));
+      return r;
+    };
+    if (late && Array.isArray(late.hist)) {
+      const scope = late.scope === "ganze Linie" ? "ganze Linie" : "dieser Halt";
+      box.append(node("div", "sc-h", `Verspätung bei Ankunft (${scope}, letzte 30 Tage, gleiche Tageszeit)`));
+      const max = Math.max(...late.hist, 1);
+      late.hist.forEach((v, i) => box.append(row(HIST_LABELS[i], v, HIST_TONES[i], max)));
+    }
+    if (known(cancelPct)) {
+      box.append(node("div", "sc-h", "Ausfälle der Linie"));
+      box.append(row("fällt aus", cancelPct, cancelPct >= 5 ? "bad" : cancelPct >= 1 ? "mid" : "good", Math.max(cancelPct, 10)));
+    }
+    return box;
+  }
+
   function rideCard(leg, legIndex, ctx) {
     const card = node("div", "leg");
     card.style.setProperty("--c", lineColor(leg));
@@ -579,9 +607,32 @@
     const st = leg.stats;
     const MIN_N = 100; // kleinere Stichproben sagen zu wenig: dann gar nichts zeigen
     const bits = [];
-    if (st && st.alight && st.alight.n >= MIN_N) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
-    if (st && known(st.cancelRate) && st.cancelN >= MIN_N) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
-    if (bits.length) body.append(node("div", "stat", bits.join(" · ")));
+    const lateOk = st && st.alight && st.alight.n >= MIN_N;
+    const cancelOk = st && known(st.cancelRate) && st.cancelN >= MIN_N;
+    if (lateOk) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
+    if (cancelOk) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
+    if (bits.length) {
+      const chart = statChart(lateOk ? st.alight : null, cancelOk ? st.cancelRate : null);
+      const statKey = `${stopsKey}:stat`;
+      const toggle = node(chart ? "button" : "div", "stat" + (chart ? " stat-btn" : ""));
+      toggle.append(node("span", "", bits.join(" · ")));
+      if (chart) {
+        chart.hidden = !state.stopsOpen.has(statKey);
+        toggle.type = "button";
+        toggle.setAttribute("aria-expanded", String(!chart.hidden));
+        toggle.classList.toggle("open", !chart.hidden);
+        toggle.append(icon("chevron"));
+        toggle.addEventListener("click", () => {
+          chart.hidden = !chart.hidden;
+          toggle.setAttribute("aria-expanded", String(!chart.hidden));
+          toggle.classList.toggle("open", !chart.hidden);
+          if (chart.hidden) state.stopsOpen.delete(statKey);
+          else state.stopsOpen.add(statKey);
+        });
+      }
+      body.append(toggle);
+      if (chart) body.append(chart);
+    }
 
     if (leg.origin) details.append(node("div", "info", `Fahrt ab ${leg.origin}`));
     for (const stop of leg.stops || []) {
@@ -735,7 +786,11 @@
     const map = h.map, zoom = map.getZoom(), b = map.getBounds();
     h.labels.forEach((m) => m.remove());
     h.labels = [];
-    const taken = [];
+    // Start, Ziel und Linienschilder haben Vorrang: dort keine Ortsnamen
+    const taken = (h.fixed || []).map(([x, y, w, ht, above]) => {
+      const p = map.project([x, y]);
+      return above ? [p.x - w / 2, p.y - ht - 4, p.x + w / 2, p.y + 6] : [p.x - w / 2, p.y - ht / 2, p.x + w / 2, p.y + ht / 2];
+    });
     for (const [name, x, y, kind] of h.places) {
       if (zoom < PLACE_MINZOOM[kind] || !b.contains([x, y])) continue;
       const p = map.project([x, y]);
@@ -881,6 +936,11 @@
         labelPlaces(h);
         map.on("moveend", () => labelPlaces(h));
       });
+      h.fixed = [
+        ...(geo.first ? [[geo.first.x, geo.first.y, 64, 26, true]] : []),
+        ...(geo.last ? [[geo.last.x, geo.last.y, 64, 26, true]] : []),
+        ...geo.badges.map((b) => [b.at[0], b.at[1], 56, 26, false]),
+      ];
       geo.badges.forEach((b) => {
         const el = node("div", "map-line");
         el.append(badge(b.leg.line, b.leg.mode)); // Linienschild (S7, Bus 5 ...) in der Mitte der Fahrt
