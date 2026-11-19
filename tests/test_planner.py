@@ -646,3 +646,57 @@ class SamplesWindowTests(unittest.TestCase):
     def test_joined_samples_keep_every_row(self):
         a, b = planner.Samples([(1.0, 60.0)]), planner.Samples([(2.0, 0.0), (3.0, 120.0)])
         self.assertEqual(list(planner.Samples.join([a, b])), [(1.0, 60.0), (2.0, 0.0), (3.0, 120.0)])
+
+
+class StationMatchTests(unittest.TestCase):
+    INDEX = [
+        {"id": "hamburg-hbf", "name": "Hamburg Hbf", "names": ["Hauptbahnhof Nord", "Hauptbahnhof Süd"], "platforms": [
+            {"id": "w1", "label": "Hamburg Hbf · Gleis 3/4", "mode": "S", "level": -1},
+            {"id": "w2", "label": "Hamburg Hbf · Gleis 5/6", "mode": "R", "level": -1},
+            {"id": "w3", "label": "Hauptbahnhof Nord · Gleis 1", "mode": "U", "level": -3},
+            {"id": "w4", "label": "Mönckebergstraße · Gleis 1", "mode": "U", "level": -1},
+            {"id": "w5", "label": "Hamburg Hbf · Gleis 7/8", "mode": "R", "level": -1},
+        ]},
+    ]
+
+    def match(self, transfer, a, b):
+        from hvv_gti.stationmatch import StationModels
+
+        return StationModels(self.INDEX).match(transfer, a, b)
+
+    def test_gti_platforms_are_matched_by_number_and_mode(self):
+        found = self.match({"station": "Hamburg Hbf", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 4 (S-Bahn)", "depPlatform": "Gleis 6A-C"}, "S", "R")
+        self.assertEqual(found, {"id": "hamburg-hbf", "from": "w1", "to": "w2"})
+
+    def test_a_platform_missing_in_the_model_gives_no_link(self):
+        self.assertIsNone(self.match({"station": "Hamburg Hbf", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 2 (S-Bahn)", "depPlatform": "Gleis 6A-C"}, "S", "R"))
+
+    def test_the_same_number_on_another_mode_is_not_confused(self):
+        # Gleis 4 gibt es als S-Bahn; ein Regionalzug auf "Gleis 4" waere nicht dieser Bahnsteig
+        self.assertIsNone(self.match({"station": "Hamburg Hbf", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 4", "depPlatform": "Gleis 6"}, "R", "R"))
+
+    def test_two_u_bahn_platforms_with_one_number_are_told_apart_by_the_station_name(self):
+        found = self.match({"station": "Hauptbahnhof Nord", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 1", "depPlatform": "Gleis 7"}, "U", "R")
+        self.assertEqual(found, {"id": "hamburg-hbf", "from": "w3", "to": "w5"})
+        self.assertIsNone(self.match({"station": "Hamburg Hbf", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 1", "depPlatform": "Gleis 7"}, "U", "R"))
+
+    def test_same_platform_bus_and_unknown_stations_get_nothing(self):
+        t = {"station": "Hamburg Hbf", "toStation": "Hamburg Hbf", "arrPlatform": "Gleis 5", "depPlatform": "Gleis 6"}
+        self.assertIsNone(self.match(t, "R", "R"))  # derselbe Bahnsteig 5/6
+        self.assertIsNone(self.match({**t, "depPlatform": "Bereich F"}, "R", "X"))
+        self.assertIsNone(self.match({**t, "station": "Harburg", "toStation": "Harburg"}, "R", "S"))
+
+    def test_attach_models_marks_only_real_transfers(self):
+        from hvv_gti.stationmatch import StationModels
+
+        legs = [
+            {"line": "S3", "from": {"name": "A", "platform": ""}, "to": {"name": "Hamburg Hbf", "platform": "Gleis 4 (S-Bahn)"}, "dep": 0, "arr": 600},
+            {"line": "RE1", "from": {"name": "Hamburg Hbf", "platform": "Gleis 6A-C"}, "to": {"name": "B", "platform": ""}, "dep": 1000, "arr": 2000},
+        ]
+        planner.annotate_transfers(legs)
+        planner.attach_models(legs, StationModels(self.INDEX))
+        self.assertEqual(legs[1]["transfer"]["model"], {"id": "hamburg-hbf", "from": "w1", "to": "w2"})
+        self.assertNotIn("model", legs[0].get("transfer", {}))
+        legs[1]["transfer"].pop("model")
+        planner.attach_models(legs, None)  # ohne Modelle bleibt alles wie vorher
+        self.assertNotIn("model", legs[1]["transfer"])

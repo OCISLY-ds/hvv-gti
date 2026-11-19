@@ -696,6 +696,14 @@
       }
     }
     if (chips.childElementCount) body.append(chips);
+    if (tr.model && tr.model.id) {
+      // Bahnhof und beide Bahnsteige sind im 3D-Modell eindeutig bekannt (hvv_gti/stationmatch.py): Umstiegsweg ansehen
+      const view = node("a", "link", "Umstieg in 3D ansehen");
+      view.href = `station.html?id=${encodeURIComponent(tr.model.id)}&from=${encodeURIComponent(tr.model.from)}&to=${encodeURIComponent(tr.model.to)}`;
+      view.target = "_blank";
+      view.rel = "noopener";
+      body.append(view);
+    }
     {
       const tm = node("div", "tm");
       tm.append(node("div", "rail"));

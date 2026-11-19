@@ -21,7 +21,8 @@ OUT = ROOT / "map" / "seed" / "stations"
 SERVERS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 AGENT = "hvv-gti/0.1 (private S-Bahn live map)"
 
-# id, Name, (Sued, West, Nord, Ost): grosse Umsteigebahnhoefe
+# id, Name, (Sued, West, Nord, Ost): grosse Umsteigebahnhoefe; ALIASES: weitere GTI-Haltestellennamen desselben Komplexes
+ALIASES = {"hamburg-hbf": ["Hauptbahnhof Nord", "Hauptbahnhof Süd", "Hauptbahnhof/Mönckebergstraße", "Mönckebergstraße", "Hamburg Hauptbahnhof"]}
 STATIONS = [
     ("hamburg-hbf", "Hamburg Hbf", (53.5500, 10.0000, 53.5560, 10.0140)),
     ("berliner-tor", "Berliner Tor", (53.5500, 10.0190, 53.5545, 10.0290)),
@@ -73,6 +74,12 @@ def fetch(sid: str, bbox: tuple, offline: bool) -> list[dict]:
     raise SystemExit("Overpass nicht erreichbar")
 
 
+def _entry(sid: str, name: str, model: dict) -> dict:
+    """Eintrag in index.json: Auswahl der 3D-Seite und Zuordnung der GTI-Gleise (hvv_gti/stationmatch.py)."""
+    return {"id": sid, "name": name, "names": ALIASES.get(sid, []), "center": model["center"], "levels": model["levels"],
+            "platforms": [{k: p[k] for k in ("id", "label", "mode", "level")} for p in model["platforms"]]}
+
+
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     offline = "--offline" in sys.argv
@@ -86,7 +93,7 @@ def main() -> None:
         model = station.model()
         (OUT / f"{sid}.json").write_text(json.dumps(model, separators=(",", ":"), ensure_ascii=False))
         size = (OUT / f"{sid}.json").stat().st_size // 1024
-        index.append({"id": sid, "name": name, "center": model["center"], "platforms": len(model["platforms"]), "levels": model["levels"]})
+        index.append(_entry(sid, name, model))
         print(f"{name}: {len(model['platforms'])} Bahnsteige, Ebenen {model['levels']}, {len(model['features']['features'])} Objekte, "
               f"{len(model['entrances'])} Eingaenge, Wege {model['stats']}, {size} KB")
     # Index aus allen vorhandenen Bahnhofsdateien (auch wenn nur einzelne neu gebaut wurden)
@@ -95,7 +102,7 @@ def main() -> None:
         f = OUT / f"{sid}.json"
         if sid not in known and f.exists():
             m = json.loads(f.read_text())
-            known[sid] = {"id": sid, "name": name, "center": m["center"], "platforms": len(m["platforms"]), "levels": m["levels"]}
+            known[sid] = _entry(sid, name, m)
     ordered = [known[sid] for sid, _, _ in STATIONS if sid in known]
     (OUT / "index.json").write_text(json.dumps(ordered, separators=(",", ":"), ensure_ascii=False))
 

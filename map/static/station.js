@@ -190,6 +190,10 @@
     const best = model.paths.filter((p) => p.src === "graph" && p.s <= 300).sort((a, b) => b.s - a.s)[0];
     if (best) { $("from").value = best.from; $("to").value = best.to; }
     else if (sorted.length > 1) { $("from").value = sorted[0].id; $("to").value = sorted[1].id; }
+    // Aus dem Planer geoeffnet (?from=&to=): genau dieser Umstieg
+    const q = new URLSearchParams(location.search);
+    const known = (id) => model.platforms.some((p) => p.id === id);
+    if (q.get("id") === model.id && known(q.get("from")) && known(q.get("to"))) { $("from").value = q.get("from"); $("to").value = q.get("to"); }
   }
 
   function fillLevels() {

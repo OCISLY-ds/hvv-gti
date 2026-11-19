@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .client import GtiClient
+from .stationmatch import StationModels
 
 log = logging.getLogger("hvv_gti.planner")
 
@@ -584,9 +585,10 @@ def parse_place(raw: str) -> dict:
 
 
 class Planner:
-    def __init__(self, client: GtiClient, reliability: Reliability):
+    def __init__(self, client: GtiClient, reliability: Reliability, models: StationModels | None = None):
         self.client = client
         self.reliability = reliability
+        self.models = models  # 3D-Bahnhofsmodelle: Umstiege am gleichen Bahnhof bekommen "model" (Bahnhof, Ankunfts- und Abfahrtsbahnsteig)
         self._departures: dict[str, tuple[float, dict]] = {}
         self._places: dict[str, tuple[float, list[dict]]] = {}
         self._courses: dict[str, tuple[float, dict]] = {}
@@ -739,6 +741,7 @@ class Planner:
             self._shape(legs)
             dep = parse_iso(schedule.get("plannedDepartureTime"))
             try:
+                attach_models(legs, self.models)
                 assessed = self.reliability.assess(legs, dep or local)
             except OSError as exc:  # Verbindungen gibt es auch ohne Messdaten
                 log.warning("Zuverlaessigkeit nicht berechnet: %s", exc)
@@ -863,6 +866,7 @@ class Planner:
         real_dep = planned_dep + ((first.get("depDelayMin") or 0) * 60 if first.get("line") else 0)
         real_arr = planned_arr + (((rides[-1].get("arrDelayMin") or 0) * 60) if rides else 0)
         try:
+            attach_models(legs, self.models)
             assessed = self.reliability.assess(legs, datetime.fromtimestamp(planned_dep, TZ))
         except OSError as exc:
             log.warning("Zuverlaessigkeit nicht berechnet: %s", exc)
@@ -1069,6 +1073,19 @@ def _iso(value) -> datetime | None:
         return datetime.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+
+
+def attach_models(legs: list[dict], models: StationModels | None) -> None:
+    """Haengt an Umstiege, deren Bahnhof und Gleise ein 3D-Modell eindeutig kennt, `transfer["model"]` = {id, from, to}."""
+    if models is None:
+        return
+    rides = [leg for leg in legs if leg.get("line")]
+    for previous, leg in zip(rides, rides[1:]):
+        transfer = leg.get("transfer")
+        if transfer and not transfer.get("stay"):
+            found = models.match(transfer, line_mode(previous.get("line")), line_mode(leg.get("line")))
+            if found:
+                transfer["model"] = found
 
 
 def annotate_transfers(legs: list[dict]) -> None:
