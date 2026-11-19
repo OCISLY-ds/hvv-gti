@@ -1084,9 +1084,12 @@
       b.type = "button";
       const t = node("span", "alt-t", hhmm(alt.real));
       const meta = node("span", "alt-m", alt.delayMin ? `Plan ${hhmm(alt.planned)} · ${signed(alt.delayMin)} min` : `in ${dur(minutesFromNow(alt.real))}`);
-      const go = node("span", "alt-go", "Wählen");
+      // Ankunft: spaetere Fahrt derselben Linie braucht die geplante Fahrzeit der gezeigten Fahrt (die genaue Ankunft liefert die Auswahl)
+      const rideS = known(leg.dep) && known(leg.arr) ? leg.arr - leg.dep : null;
+      const arrive = rideS === null ? null : alt.real + rideS;
+      const go = node("span", "alt-a", arrive === null ? "" : `Ankunft ${hhmm(arrive)}`);
       b.append(t, meta, go);
-      b.setAttribute("aria-label", `Abfahrt um ${hhmm(alt.real)} Uhr wählen`);
+      b.setAttribute("aria-label", `Abfahrt um ${hhmm(alt.real)} Uhr${arrive === null ? "" : `, Ankunft ${hhmm(arrive)} Uhr`}, wählen`);
       b.addEventListener("click", () => chooseAlt(ri, index, alt, b));
       rows.append(b);
     }
@@ -1123,7 +1126,7 @@
     state.rerouting = true;
     state.altError = null;
     document.querySelectorAll(".alt-item").forEach((b) => (b.disabled = true));
-    button.querySelector(".alt-go").textContent = "Berechne …";
+    button.querySelector(".alt-a").textContent = "Berechne …";
     try {
       const next = await rerouteCall(route, index, alt.planned);
       next.key = route.key;

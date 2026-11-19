@@ -332,7 +332,7 @@ button.dir.open svg { transform: rotate(180deg); }
 .alt-item:disabled { opacity: 0.6; cursor: progress; }
 .alt-t { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .alt-m { color: var(--mute); font-size: 13px; }
-.alt-go { color: var(--primary); font-size: 14px; font-weight: 700; }
+.alt-a { color: var(--ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .custom-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--sunken); color: var(--mute); font-size: 13px; }
 .custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-weight: 700; text-decoration: underline; }
 .status { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--good-bg); color: var(--ink); font-size: 14px; }
