@@ -280,8 +280,12 @@
       try {
         const data = await getJson(`/api/places?q=${encodeURIComponent(text)}`, controller.signal);
         if (mine !== seq) return;
-        if (!data.places.length) return state("Nichts gefunden. Bitte Schreibweise prüfen oder Straße mit Hausnummer und Ort eingeben.");
+        if (!data.places.length) {
+          announce("Nichts gefunden");
+          return state("Nichts gefunden. Bitte Schreibweise prüfen oder Straße mit Hausnummer und Ort eingeben.");
+        }
         render(data.places.map((p) => entryFor(p, false)));
+        announce(`${data.places.length} ${data.places.length === 1 ? "Vorschlag" : "Vorschläge"}`);
       } catch (e) {
         if (mine !== seq || (e && e.name === "AbortError")) return;
         state(e.message);
@@ -1274,7 +1278,10 @@
     fields.to.set(sv.to);
     whenTouched = true;
     $("when").value = localInputOf(sv.plannedDep);
-    document.querySelectorAll(".seg [role=radio]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.arrive === "0")));
+    document.querySelectorAll(".seg [role=radio]").forEach((b) => {
+      b.setAttribute("aria-checked", String(b.dataset.arrive === "0"));
+      b.tabIndex = b.dataset.arrive === "0" ? 0 : -1;
+    });
     showWhenSummary();
     return search();
   }
@@ -1553,10 +1560,25 @@
       showWhen();
     });
     const seg = document.querySelectorAll(".seg [role=radio]");
-    seg.forEach((btn) => btn.addEventListener("click", () => {
-      seg.forEach((b) => b.setAttribute("aria-checked", String(b === btn)));
+    // Radiogruppe nach WAI-ARIA: nur die gewaehlte Taste ist per Tab erreichbar, Pfeiltasten wechseln
+    const pick = (btn, focus) => {
+      seg.forEach((b) => {
+        b.setAttribute("aria-checked", String(b === btn));
+        b.tabIndex = b === btn ? 0 : -1;
+      });
+      if (focus) btn.focus();
       showWhen();
-    }));
+    };
+    seg.forEach((btn, n) => {
+      btn.tabIndex = btn.getAttribute("aria-checked") === "true" ? 0 : -1;
+      btn.addEventListener("click", () => pick(btn));
+      btn.addEventListener("keydown", (e) => {
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        pick(seg[(n + step + seg.length) % seg.length], true);
+      });
+    });
     showWhenSummary = showWhen;
     showWhen();
     const saved = store.get("hvv.minTransfer");
@@ -1581,6 +1603,15 @@
       tickAge();
       autoRefresh(); // zurueck im Tab: sofort neu abrufen, wenn der Stand alt ist
     });
+    // Systemfarbschema wechselt: offene Routenkarten neu aufbauen, damit Kartenstil und Beschriftung passen
+    if (window.matchMedia) {
+      const scheme = matchMedia("(prefers-color-scheme: dark)");
+      const changed = () => {
+        pruneRouteMaps(new Set());
+        if (state.data) renderResults();
+      };
+      if (scheme.addEventListener) scheme.addEventListener("change", changed);
+    }
     state.saved = loadSaved();
     if (state.saved) {
       const sv = state.saved;

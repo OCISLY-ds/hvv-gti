@@ -117,7 +117,7 @@ button { cursor: pointer; }
 .ico.clear { right: 0; }
 .ico.locate { right: 0; color: var(--primary); }
 .ico.locate.busy svg { animation: spin 0.9s linear infinite; }
-.field:has(.clear:not([hidden])) .ico.locate { right: 40px; }
+.field:has(.clear:not([hidden])) .ico.locate { right: 44px; }
 .swap {
   position: absolute;
   right: 0;
@@ -170,7 +170,7 @@ button { cursor: pointer; }
    dem Handy zu breit (iOS gibt datetime-local eine Mindestbreite und ignoriert min-width). */
 .when { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 12px; }
 .seg { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 12px; background: var(--sunken); border: 1.5px solid var(--line-ui); }
-.seg button { height: 40px; padding: 0 8px; border: 0; border-radius: 9px; background: none; font-weight: 600; font-size: 15px; color: var(--mute); }
+.seg button { height: 44px; padding: 0 8px; border: 0; border-radius: 9px; background: none; font-weight: 600; font-size: 15px; color: var(--mute); }
 .seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(15 23 42 / 18%); }
 .when input[type="datetime-local"] {
   grid-column: 1;
@@ -194,7 +194,7 @@ button { cursor: pointer; }
 .chip-btn:active { background: var(--sunken); }
 
 .opts { margin-top: 10px; }
-.opts summary { display: flex; align-items: center; min-height: 40px; padding: 0 4px; color: var(--mute); font-size: 14px; cursor: pointer; list-style: none; }
+.opts summary { display: flex; align-items: center; min-height: 44px; padding: 0 4px; color: var(--mute); font-size: 14px; cursor: pointer; list-style: none; }
 .opts summary::-webkit-details-marker { display: none; }
 .opts summary::after { content: ""; margin-left: 8px; width: 8px; height: 8px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-2px); transition: transform 0.15s; }
 .opts[open] summary::after { transform: rotate(-135deg); }
@@ -322,12 +322,12 @@ button { cursor: pointer; }
 .save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-top: 2px; }
 .save-row .hint { font-size: 12.5px; }
 .custom-note.auto { background: var(--mid-bg); color: var(--mid); }
-.xchips .link { min-height: 32px; }
+.xchips .link { min-height: 44px; }
 .pill.custom { background: color-mix(in srgb, var(--glow) 28%, var(--surface)); color: var(--ink); }
 .note.err { background: var(--bad-bg); color: var(--bad); }
 
 .warn { margin-top: 6px; color: var(--bad); font-weight: 600; font-size: 14px; }
-.more { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 40px; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--mute); font-size: 14px; text-align: left; }
+.more { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--mute); font-size: 14px; text-align: left; }
 div.more { cursor: default; }
 .more svg { width: 18px; height: 18px; color: var(--primary); transition: transform 0.15s; }
 .more.open svg { transform: rotate(180deg); }
@@ -398,8 +398,12 @@ div.more { cursor: default; }
   .rt-logo .lb img { height: 18px; }
   .trip-time { font-size: 22px; }
 }
+/* Weniger Bewegung: nichts dreht oder pulsiert, aber "laedt gerade" bleibt sichtbar (abgeblendetes Symbol, Platzhalter bleiben stehen) */
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { transition: none !important; }
+  .live .w1, .live .w2, .skel i { animation: none; }
+  .ico.locate.busy svg, .age .refresh.busy svg { animation: none; opacity: 0.4; }
+  .skel i { background: var(--line); }
 }
 
 /* ---- Routenkarte in der Detailansicht ---- */
