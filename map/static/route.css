@@ -31,7 +31,7 @@
   --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif; /* HamburgSans ist nicht frei nutzbar; Arial ist der Ersatz */
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     /* Auf Dunkel werden Petrol und Rot aufgehellt (Text/Symbole >= 4,5 : 1), Flaechen sind tiefes Petrol */
     --bg: #0f1b1d;
     --surface: #172a2d;
@@ -55,6 +55,32 @@
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
   }
 }
+/* Manuell gewaehlter Dunkelmodus (Knopf neben den Filtern), unabhaengig vom System */
+:root[data-theme="dark"] {
+  /* Auf Dunkel werden Petrol und Rot aufgehellt (Text/Symbole >= 4,5 : 1), Flaechen sind tiefes Petrol */
+  --bg: #0f1b1d;
+  --surface: #172a2d;
+  --sunken: #21393d;
+  --ink: #e6f1f1;
+  --mute: #a9c0c2;
+  --line: #2b474b;
+  --line-ui: #5f8689;
+  --primary: #5cc8cf;
+  --on-primary: #062a2d;
+  --accent: #ff5c61;
+  --on-accent: #3b0508;
+  --focus: #e6f1f1;
+  --glow: #5cc8cf;
+  --good: #80ba27;
+  --good-bg: #243a22;
+  --mid: #e4a519;
+  --mid-bg: #3d3220;
+  --bad: #ff9a9a;
+  --bad-bg: #4a2226;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; max-width: 100%; overflow-x: hidden; }
@@ -184,7 +210,7 @@ button { cursor: pointer; }
   border-radius: 14px;
   background: var(--sunken);
   font-size: 16px;
-  color-scheme: light dark;
+  color-scheme: inherit;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -446,3 +472,6 @@ div.more { cursor: default; }
 .flt summary b { margin-left: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .trip-in { margin-bottom: 2px; font-size: 13px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
 .trip-in:empty { display: none; }
+.theme-btn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1.5px solid var(--line-ui); border-radius: 50%; background: var(--surface); color: var(--ink); }
+.theme-btn svg { width: 18px; height: 18px; }
+.theme-btn:active { background: var(--sunken); }

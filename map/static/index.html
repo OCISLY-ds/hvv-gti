@@ -13,6 +13,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>HVV Routenplaner</title>
+<script>try{var t=localStorage.getItem("hvv.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="route.css">
 </head>
 <body>
@@ -69,6 +70,7 @@
         <input id="punct" type="range" min="0" max="5" step="1" value="0" aria-describedby="punct-val">
       </label>
     </details>
+    <button type="button" id="theme" class="theme-btn"></button>
     </div>
 
     <button id="go" type="submit" class="primary">Verbindungen suchen</button>
