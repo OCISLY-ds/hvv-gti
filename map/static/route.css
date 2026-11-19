@@ -489,3 +489,4 @@ div.more { cursor: default; }
 .sc-fill { display: block; height: 100%; border-radius: 5px; }
 .sc-fill.good { background: var(--good-fill, #80ba27); } .sc-fill.mid { background: var(--mid-fill, #e4a519); } .sc-fill.bad { background: var(--bad-fill, #e63328); }
 .sc-v { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.sc-s { margin: -3px 0 8px; font-size: 11.5px; color: var(--mute); }

@@ -507,7 +507,7 @@
   }
 
   // Verteilung der Verspaetungen bei Ankunft (Klassen wie planner.HIST_EDGES_S) und die Ausfallquote als einfache Balken
-  const HIST_LABELS = ["früh / pünktlich", "bis 1 min", "bis 3 min", "bis 5 min", "bis 10 min", "bis 15 min", "über 15 min"];
+  const HIST_LABELS = ["pünktlich", "bis 1 min", "bis 3 min", "bis 5 min", "bis 10 min", "bis 15 min", "über 15 min"];
   const HIST_TONES = ["good", "good", "good", "mid", "mid", "bad", "bad"]; // bis 3 min gilt als pünktlich
   function statChart(late, cancelPct) {
     if (!(late && Array.isArray(late.hist)) && !known(cancelPct)) return null;
@@ -523,7 +523,8 @@
     };
     if (late && Array.isArray(late.hist)) {
       const scope = late.scope === "ganze Linie" ? "ganze Linie" : "dieser Halt";
-      box.append(node("div", "sc-h", `Verspätung bei Ankunft (${scope}, letzte 30 Tage, gleiche Tageszeit)`));
+      const when = { "gleiche Tagesart und Uhrzeit": "Werktag bzw. Wochenende, ±1 Stunde um die Abfahrt", "gleiche Uhrzeit": "±1 Stunde um die Abfahrt, alle Wochentage", "alle Zeiten": "alle Tageszeiten" }[late.window] || late.window;
+      box.append(node("div", "sc-h", "Verspätung bei Ankunft"), node("div", "sc-s", `${scope} · ${when} · letzte 30 Tage`));
       const max = Math.max(...late.hist, 1);
       late.hist.forEach((v, i) => box.append(row(HIST_LABELS[i], v, HIST_TONES[i], max)));
     }
@@ -1540,37 +1541,39 @@
 
   const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // ---- Farbschema: Automatisch (System), Hell, Dunkel ----
-  const THEMES = [["auto", "Automatisch (wie das System)"], ["light", "Hell"], ["dark", "Dunkel"]];
+  // ---- Farbschema: nur Hell und Dunkel ----
+  // Ohne eigene Wahl folgt die Seite dem System; der Knopf zeigt, wohin ein Tipp wechselt, und merkt sich die Wahl.
   const THEME_ICONS = {
-    auto: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 15A7 7 0 1 0 8 1zm0 1A8 8 0 1 1 8 0a8 8 0 0 1 0 16"/></svg>',
     light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/></svg>',
     dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>',
   };
-  const themeMode = () => document.documentElement.dataset.theme || "auto";
-  const isDark = () => (themeMode() === "dark" ? true : themeMode() === "light" ? false : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches));
-  function applyTheme(mode, remember) {
-    if (mode === "auto") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = mode;
-    if (remember) store.set("hvv.theme", mode);
-    // Browserleiste: bei fester Wahl beide Farben gleich setzen, sonst wieder je nach System
+  const isDark = () => {
+    const chosen = document.documentElement.dataset.theme;
+    return chosen ? chosen === "dark" : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  };
+  function syncThemeUi() {
+    const dark = isDark();
+    // Browserleiste: bei eigener Wahl beide Farben gleich setzen, sonst je nach System
     const colors = { light: "#f3f6f5", dark: "#0f1b1d" };
+    const chosen = document.documentElement.dataset.theme;
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
       const own = /dark/.test(m.media || "") ? "dark" : "light";
-      m.content = mode === "auto" ? colors[own] : colors[mode];
+      m.content = chosen ? colors[chosen] : colors[own];
     });
     const btn = $("theme");
     if (btn) {
-      const label = THEMES.find((t) => t[0] === mode)[1];
-      btn.innerHTML = THEME_ICONS[mode];
-      btn.setAttribute("aria-label", `Farbschema: ${label}. Zum Wechseln tippen.`);
-      btn.title = `Farbschema: ${label}`;
+      btn.innerHTML = THEME_ICONS[dark ? "light" : "dark"]; // Sonne im Dunkelmodus, Mond im Hellmodus
+      const label = dark ? "Zum hellen Modus wechseln" : "Zum dunklen Modus wechseln";
+      btn.setAttribute("aria-label", label);
+      btn.title = label;
     }
   }
-  function cycleTheme() {
-    const next = THEMES[(THEMES.findIndex((t) => t[0] === themeMode()) + 1) % THEMES.length][0];
-    applyTheme(next, true);
-    announce(`Farbschema: ${THEMES.find((t) => t[0] === next)[1]}`);
+  function toggleTheme() {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    store.set("hvv.theme", next);
+    syncThemeUi();
+    announce(next === "dark" ? "Dunkler Modus" : "Heller Modus");
     pruneRouteMaps(new Set()); // Karten in neuem Stil neu aufbauen
     if (state.data) renderResults();
   }
@@ -1891,12 +1894,13 @@
       tickAge();
       autoRefresh(); // zurueck im Tab: sofort neu abrufen, wenn der Stand alt ist
     });
-    applyTheme(themeMode(), false);
-    $("theme").addEventListener("click", cycleTheme);
+    syncThemeUi();
+    $("theme").addEventListener("click", toggleTheme);
     // Systemfarbschema wechselt: offene Routenkarten neu aufbauen, damit Kartenstil und Beschriftung passen
     if (window.matchMedia) {
       const scheme = matchMedia("(prefers-color-scheme: dark)");
       const changed = () => {
+        syncThemeUi();
         pruneRouteMaps(new Set());
         if (state.data) renderResults();
       };
