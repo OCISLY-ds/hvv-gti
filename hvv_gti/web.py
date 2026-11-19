@@ -598,6 +598,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/reroute":
                 return self._reroute(planner, body or {})
             start, dest = parse_place(arg("from")), parse_place(arg("to"))  # Haltestellen-ID oder Adresse/Standort als JSON
+            if _same_place(start, dest):
+                return self._json({"error": "Start und Ziel sind identisch. Bitte ein anderes Ziel wählen."}, HTTPStatus.BAD_REQUEST)
             when = datetime.now(ZoneInfo("Europe/Berlin"))
             if arg("when"):
                 when = datetime.fromisoformat(arg("when")).replace(tzinfo=ZoneInfo("Europe/Berlin"))
@@ -719,6 +721,20 @@ COMPRESSIBLE = {"text/html", "text/css", "text/javascript", "application/javascr
 _GZ_CACHE: dict[str, tuple[str, bytes]] = {}  # Pfad -> (ETag, komprimierter Inhalt): jede Datei nur einmal packen
 
 
+def _same_place(a, b) -> bool:
+    """Start und Ziel meinen denselben Ort: gleiche Haltestellen-ID bzw. gleiche ID, oder (ohne ID) nahezu gleiche Koordinate."""
+    ida = a if isinstance(a, str) else (a or {}).get("id")
+    idb = b if isinstance(b, str) else (b or {}).get("id")
+    if ida and idb:
+        return ida == idb
+    if isinstance(a, dict) and isinstance(b, dict):
+        try:
+            return abs(float(a["x"]) - float(b["x"])) < 0.0001 and abs(float(a["y"]) - float(b["y"])) < 0.0001  # ca. 10 m
+        except (KeyError, TypeError, ValueError):
+            return False
+    return False
+
+
 VERSIONED_ASSETS = ("route.css", "route.js")
 
 
@@ -769,18 +785,25 @@ class RateLimiter:
 
 
 def client_ip(peer: str, forwarded: str | None) -> str:
-    """Hinter einem Reverse Proxy (privater/lokaler Peer) gilt die erste Adresse aus X-Forwarded-For, sonst die Peer-Adresse."""
-    try:
-        address = ipaddress.ip_address(peer)
-        trusted = address.is_loopback or any(address in net for net in PROXY_NETWORKS if net.version == address.version)
-    except ValueError:
-        trusted = False
-    if trusted and forwarded:
-        first = forwarded.split(",")[0].strip()
+    """Hinter einem Reverse Proxy (privater/lokaler Peer) gilt die letzte Adresse aus X-Forwarded-For, die nicht selbst zu einem Proxy
+    gehoert. Proxys (Traefik, Cloudflare) haengen die Adresse an, die sie selbst gesehen haben; vorangestellte Eintraege stammen vom
+    Client und sind faelschbar (sonst liesse sich das Limit je Adresse mit einem erfundenen ersten Eintrag umgehen)."""
+
+    def is_proxy(text: str) -> bool:
         try:
-            return str(ipaddress.ip_address(first))
+            address = ipaddress.ip_address(text)
         except ValueError:
-            pass
+            return False
+        return address.is_loopback or any(address in net for net in PROXY_NETWORKS if net.version == address.version)
+
+    if forwarded and is_proxy(peer):
+        for item in reversed([part.strip() for part in forwarded.split(",")]):
+            try:
+                address = ipaddress.ip_address(item)
+            except ValueError:
+                break  # unlesbarer Eintrag: nichts dahinter ist glaubwuerdig
+            if not is_proxy(str(address)):
+                return str(address)
     return peer
 
 

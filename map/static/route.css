@@ -430,5 +430,5 @@ div.more { cursor: default; }
 .xfer .body { padding: 6px 0; }
 .xfer .xtext { font-size: 14px; color: var(--mute); }
 .xfer .xtext svg { width: 20px; height: 20px; }
-.map-line { pointer-events: none; padding: 2px; border-radius: 7px; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 40%); }
+.map-line { pointer-events: none; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%)); }
 .map-line .lb img { height: 18px; }

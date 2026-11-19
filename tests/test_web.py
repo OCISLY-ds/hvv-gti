@@ -68,6 +68,11 @@ class RateLimitTest(unittest.TestCase):
         self.assertEqual(web.client_ip("127.0.0.1", None), "127.0.0.1")
         self.assertEqual(web.client_ip("198.51.100.9", "203.0.113.7"), "198.51.100.9")  # oeffentlicher Peer: Header nicht glaubwuerdig
         self.assertEqual(web.client_ip("10.0.0.1", "kein-ip"), "10.0.0.1")
+        # Cloudflare/Traefik haengen die echte Adresse hinten an: ein erfundener erster Eintrag zaehlt nicht
+        self.assertEqual(web.client_ip("127.0.0.1", "6.6.6.6, 203.0.113.7"), "203.0.113.7")
+        self.assertEqual(web.client_ip("127.0.0.1", "6.6.6.6, 203.0.113.7, 10.0.0.2"), "203.0.113.7")
+        self.assertEqual(web.client_ip("127.0.0.1", "10.0.0.5, 192.168.1.4"), "127.0.0.1")  # nur Proxy-Adressen: Peer
+        self.assertEqual(web.client_ip("127.0.0.1", "6.6.6.6, kaputt"), "127.0.0.1")
 
 
 class IconIndexTest(unittest.TestCase):
@@ -492,3 +497,13 @@ class VersionedIndexTest(unittest.TestCase):
         self.assertIn('href="route.css?v=abc123"', out)
         self.assertIn('src="route.js?v=abc123"', out)
         self.assertIn('href="icon.svg"', out)
+
+
+class SamePlaceTest(unittest.TestCase):
+    def test_start_and_destination_must_differ(self):
+        same = web._same_place
+        self.assertTrue(same("Master:10950", "Master:10950"))
+        self.assertFalse(same("Master:10950", "Master:8000089"))
+        self.assertTrue(same({"id": "25636", "type": "ADDRESS"}, {"id": "25636", "type": "ADDRESS"}))
+        self.assertTrue(same({"type": "COORDINATE", "x": 10.2, "y": 53.49}, {"type": "COORDINATE", "x": 10.20003, "y": 53.49002}))
+        self.assertFalse(same({"type": "COORDINATE", "x": 10.2, "y": 53.49}, {"type": "COORDINATE", "x": 10.21, "y": 53.49}))

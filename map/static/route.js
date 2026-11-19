@@ -136,6 +136,12 @@
   }
 
   // Abfrageparameter: Haltestellen als nackte ID, alles andere als JSON (der Server prueft es)
+  // Start und Ziel meinen denselben Ort: gleiche ID, sonst (Standort, Adresse ohne ID) nahezu gleiche Koordinate (ca. 10 m)
+  function samePlace(a, b) {
+    if (a.id && b.id) return a.id === b.id;
+    return [a.x, a.y, b.x, b.y].every((v) => typeof v === "number") && Math.abs(a.x - b.x) < 0.0001 && Math.abs(a.y - b.y) < 0.0001;
+  }
+
   function placeParam(p) {
     if (p.type === "STATION") return p.id;
     return JSON.stringify({ type: p.type, id: p.id || undefined, name: p.name, city: p.city || undefined, x: p.x, y: p.y });
@@ -1608,6 +1614,12 @@
           if (typed) return showMessage(`„${typed}“ nicht gefunden`, "Bitte Schreibweise prüfen oder Straße mit Hausnummer und Ort eingeben.", false);
           return showMessage(which === "from" ? "Start fehlt" : "Ziel fehlt", which === "from" ? "Bitte Adresse oder Haltestelle für den Start eingeben oder den Standort nutzen." : "Bitte Adresse oder Haltestelle für das Ziel eingeben.", false);
         }
+      }
+      if (samePlace(from, to)) {
+        fields.to.focus();
+        state.data = null;
+        state.fetchedAt = 0;
+        return showMessage("Start und Ziel sind identisch", "Bitte ein anderes Ziel oder einen anderen Start wählen.", false);
       }
       if (!whenTouched || !$("when").value) $("when").value = nowLocalInput();
       const params = new URLSearchParams({ from: placeParam(from), to: placeParam(to), arrive: document.querySelector('.seg [aria-checked="true"]').dataset.arrive });
