@@ -765,9 +765,27 @@
     };
   }
 
+  // Mitte einer Linie nach Streckenlaenge (Grad grob in Meter umgerechnet), dort sitzt das Linienschild
+  function midpoint(coords) {
+    const kx = Math.cos((coords[0][1] * Math.PI) / 180);
+    const d = (a, b) => Math.hypot((b[0] - a[0]) * kx, b[1] - a[1]);
+    let total = 0;
+    for (let i = 1; i < coords.length; i++) total += d(coords[i - 1], coords[i]);
+    let run = total / 2;
+    for (let i = 1; i < coords.length; i++) {
+      const seg = d(coords[i - 1], coords[i]);
+      if (run <= seg || i === coords.length - 1) {
+        const f = seg ? Math.min(1, run / seg) : 0;
+        return [coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * f, coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * f];
+      }
+      run -= seg;
+    }
+    return coords[0];
+  }
+
   // Linien (je Fahrt oder Fussweg), Haltepunkte und die Grenzen der Route aus den Koordinaten der Verbindung
   function routeGeo(r) {
-    const lines = [], stops = [], pts = [];
+    const lines = [], stops = [], pts = [], badges = [];
     const ok = (p) => p && typeof p.x === "number" && typeof p.y === "number";
     r.legs.forEach((leg) => {
       // mit Gleisgeometrie (leg.shape, flach [x, y, ...]) vom Server, sonst gerade von Halt zu Halt
@@ -775,6 +793,7 @@
       if (leg.line && Array.isArray(leg.shape) && leg.shape.length >= 4) for (let k = 0; k + 1 < leg.shape.length; k += 2) coords.push([leg.shape[k], leg.shape[k + 1]]);
       else coords = [leg.from, ...(leg.line ? leg.stops || [] : []), leg.to].filter(ok).map((p) => [p.x, p.y]);
       coords.forEach((c) => pts.push(c));
+      if (leg.line && coords.length >= 2) badges.push({ leg, at: midpoint(coords) });
       if (coords.length >= 2) lines.push({ type: "Feature", properties: { color: leg.line ? lineColor(leg) : "#5b6785", walk: leg.line ? 0 : 1 }, geometry: { type: "LineString", coordinates: coords } });
       if (leg.line) {
         (leg.stops || []).filter(ok).forEach((p) => stops.push({ type: "Feature", properties: { color: lineColor(leg), big: 0 }, geometry: { type: "Point", coordinates: [p.x, p.y] } }));
@@ -782,7 +801,7 @@
       }
     });
     const first = r.legs.map((l) => l.from).find(ok), last = [...r.legs].reverse().map((l) => l.to).find(ok);
-    return { lines, stops, pts, first, last, sig: JSON.stringify([lines, stops]) };
+    return { lines, stops, pts, badges, first, last, sig: JSON.stringify([lines, stops]) };
   }
 
   const fitRoute = (map, geo, animate) => {
@@ -834,6 +853,11 @@
         h.labels = [];
         labelPlaces(h);
         map.on("moveend", () => labelPlaces(h));
+      });
+      geo.badges.forEach((b) => {
+        const el = node("div", "map-line");
+        el.append(badge(b.leg.line, b.leg.mode)); // Linienschild (S7, Bus 5 ...) in der Mitte der Fahrt
+        new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(b.at).addTo(map);
       });
       mark(geo.first, "START", "start");
       mark(geo.last, "ZIEL", "end");

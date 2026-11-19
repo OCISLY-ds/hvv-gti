@@ -387,30 +387,10 @@ div.more { cursor: default; }
   main { padding-top: 32px; }
   .route-map { height: 300px; }
 }
-/* Desktop und Tablet quer: links Suche (bleibt stehen), rechts die Verbindungen; die Karte in der Detailansicht bekommt Platz */
-@media (min-width: 960px) {
-  main {
-    max-width: 1120px;
-    display: grid;
-    grid-template-columns: 380px minmax(0, 1fr);
-    grid-template-areas: "side out" "side foot";
-    grid-template-rows: auto 1fr;
-    column-gap: 28px;
-    padding-bottom: 56px;
-  }
-  .side { grid-area: side; position: sticky; top: 16px; z-index: 5; align-self: start; }
-  #out { grid-area: out; margin-top: 0; align-content: start; }
-  #foot { grid-area: foot; align-self: end; margin-left: 6px; margin-right: 6px; }
-  .route-map { height: 340px; }
-  #out:empty::before { content: "Hier erscheinen die Verbindungen."; display: block; padding: 28px 8px; color: var(--mute); font-size: 15px; }
-}
 @media (min-width: 960px) and (hover: hover) {
   .trip-head:hover { background: color-mix(in srgb, var(--sunken) 55%, transparent); }
   .primary:hover { filter: brightness(1.08); }
   .alt-item:hover, .chip-btn:hover, .age .refresh:hover, .msg .retry:hover { background: var(--sunken); }
-}
-@media (min-width: 1280px) {
-  main { grid-template-columns: 400px minmax(0, 1fr); column-gap: 36px; }
 }
 @media (max-width: 420px) {
   .xsub, .xchips { margin-left: 0; }
@@ -450,3 +430,5 @@ div.more { cursor: default; }
 .xfer .body { padding: 6px 0; }
 .xfer .xtext { font-size: 14px; color: var(--mute); }
 .xfer .xtext svg { width: 20px; height: 20px; }
+.map-line { pointer-events: none; padding: 2px; border-radius: 7px; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 40%); }
+.map-line .lb img { height: 18px; }
