@@ -48,7 +48,7 @@ test("text colours keep AA contrast on their surfaces in light and dark mode", (
   for (const [name, t] of [["hell", light], ["dunkel", night]]) {
     const pairs = [
       ["ink", "surface"], ["ink", "bg"], ["mute", "surface"], ["mute", "sunken"], ["mute", "bg"], ["on-primary", "primary"],
-      ["primary", "surface"], ["good", "good-bg"], ["mid", "mid-bg"], ["bad", "bad-bg"], ["good", "surface"], ["mid", "surface"], ["bad", "surface"],
+      ["primary", "surface"], ["primary-ink", "sunken"], ["primary-ink", "surface"], ["good", "good-bg"], ["mid", "mid-bg"], ["bad", "bad-bg"], ["good", "surface"], ["mid", "surface"], ["bad", "surface"],
     ];
     for (const [fg, bg] of pairs) assert.ok(ratio(t[fg], t[bg]) >= 4.5, `${name}: ${fg} auf ${bg} = ${ratio(t[fg], t[bg]).toFixed(2)}`);
   }

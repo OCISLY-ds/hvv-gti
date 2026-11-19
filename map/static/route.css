@@ -1,58 +1,55 @@
-/* HVV Routenplaner: Handy zuerst, ab ~720 px zentrierte Spalte. Farben als Tokens, Dunkelmodus folgt dem System. */
+/* HVV Routenplaner: Handy zuerst, ab 960 px zwei Spalten. Farben als Tokens, Dunkelmodus folgt dem System.
+   Leitfarbe ist das Hamburg-Rot (#DA121A): Aktionen, Zielmarke, Auswahl, Fokus-Akzent. Schrift ist ein warmes Dunkel mit Ziegelstich,
+   Flaechen sind helles Warmgrau. Gruen und Gold bleiben Statusfarben, "Verspaetet" ist ein dunkleres Weinrot, damit es nicht mit der Markenfarbe verwechselt wird. */
 :root {
-  /* Farben: Hauptfarben und Alternativfarben des Gestaltungshandbuchs der Metropolregion Hamburg (docs/design-system.md).
-     Dunkelblau #003064 ist Schrift- und Gestaltungsfarbe; Cyan/Gruen/Rot/Gold sind Flaechenfarben. Fuer Text sind Gruen, Gold und Rot
-     abgedunkelt (Kontrast >= 4,5 : 1), die Flaechenfarben stehen als --*-fill. */
-  --mrh-blau: #003064;
-  --mrh-cyan: #40c0f0;
-  --mrh-gruen: #80ba27;
-  --mrh-rot: #e63328;
-  --mrh-gold: #e4a519;
-  --bg: #f2f5f9;
+  --hh-rot: #da121a;
+  --bg: #f7f4f3;
   --surface: #ffffff;
-  --sunken: #eaf0f6;
-  --ink: #003064;
-  --mute: #4a5f78;
-  --line: #d3dce8;
-  --line-ui: #72869f; /* Rahmen interaktiver Elemente: >= 3 : 1 auf Flaeche und Feldfuellung (WCAG 1.4.11); --line bleibt fuer Trennlinien */
-  --primary: #003064;
+  --sunken: #efe9e8;
+  --ink: #2b1a1c;
+  --mute: #6b5558;
+  --line: #e2d7d6;
+  --line-ui: #a8767b; /* Rahmen interaktiver Elemente: >= 3 : 1 auf Flaeche und Feldfuellung (WCAG 1.4.11); --line bleibt fuer Trennlinien */
+  --primary: #da121a;
+  --primary-ink: #b80e16; /* Rot als Text/Symbol auch auf der Feldfuellung (>= 4,5 : 1) */
   --on-primary: #ffffff;
-  --focus: #003064;
-  --glow: #40c0f0;
+  --focus: #2b1a1c;
+  --glow: #da121a;
   --good: #00722f;
   --good-bg: #e8f3d8;
   --good-fill: #80ba27;
   --mid: #7a4b00;
   --mid-bg: #f9ebcc;
   --mid-fill: #e4a519;
-  --bad: #b3241a;
-  --bad-bg: #fce7e5;
+  --bad: #9c1319;
+  --bad-bg: #fbe6e6;
   --bad-fill: #e63328;
-  --shadow: 0 1px 2px rgb(0 48 100 / 8%), 0 4px 14px rgb(0 48 100 / 7%);
+  --shadow: 0 1px 2px rgb(43 26 28 / 8%), 0 4px 14px rgb(43 26 28 / 8%);
   --radius: 18px;
   --tap: 48px;
-  --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif; /* HamburgSans ist nicht frei nutzbar; das Handbuch nennt Arial als Ersatz */
+  --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif; /* HamburgSans ist nicht frei nutzbar; Arial ist der Ersatz */
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Dunkelblau traegt auf dunklem Grund nicht (1,4 : 1): Cyan wird Primaerfarbe, Flaechen sind abgedunkeltes Dunkelblau */
-    --bg: #04152a;
-    --surface: #0b2342;
-    --sunken: #12304f;
-    --ink: #e8f1fb;
-    --mute: #9db3cc;
-    --line: #234466;
-    --line-ui: #5a80a4;
-    --primary: #40c0f0;
-    --on-primary: #002040;
-    --focus: #7fd6f6;
-    --glow: #40c0f0;
+    /* Hamburg-Rot ist auf Dunkel zu dunkel (Text 3,5 : 1): aufgehellt, Flaechen sind abgedunkeltes Weinrot */
+    --bg: #1a0f10;
+    --surface: #2a1719;
+    --sunken: #3a2224;
+    --ink: #f5e9e9;
+    --mute: #c3a9ac;
+    --line: #4a2e31;
+    --line-ui: #9a666b;
+    --primary: #ff5c61;
+    --primary-ink: #ff5c61;
+    --on-primary: #3b0508;
+    --focus: #f5e9e9;
+    --glow: #ff5c61;
     --good: #80ba27;
-    --good-bg: #22413d;
+    --good-bg: #243a22;
     --mid: #e4a519;
-    --mid-bg: #363d3a;
-    --bad: #ff8f85;
-    --bad-bg: #42273c;
+    --mid-bg: #3d3220;
+    --bad: #ff9a9a;
+    --bad-bg: #4a2226;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 18px rgb(0 0 0 / 30%);
   }
 }
@@ -67,6 +64,7 @@ body {
   color: var(--ink);
   font: 16px/1.4 var(--font);
   padding-top: env(safe-area-inset-top);
+  box-shadow: inset 0 4px 0 var(--primary); /* Hamburg-Rot als Kante am oberen Rand */
   max-width: 100%;
   overflow-x: clip; /* Netz: nichts darf die Seite breiter als den Bildschirm machen */
 }
@@ -256,6 +254,7 @@ button { cursor: pointer; }
 .pill.bad { background: var(--bad-bg); color: var(--bad); }
 .walk-chip { display: inline-flex; align-items: center; gap: 3px; color: var(--mute); font-size: 13px; }
 .walk-chip svg { width: 18px; height: 18px; }
+.trip.open { box-shadow: var(--shadow), 0 0 0 2px var(--primary); }
 .trip-body { padding: 0 12px 14px; border-top: 1px solid var(--line); }
 
 /* Linienschild */
@@ -310,7 +309,7 @@ button { cursor: pointer; }
 .alt-m { color: var(--mute); font-size: 13px; }
 .alt-go { color: var(--primary); font-size: 14px; font-weight: 700; }
 .custom-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--sunken); color: var(--mute); font-size: 13px; }
-.custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-weight: 700; text-decoration: underline; }
+.custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary-ink); font-weight: 700; text-decoration: underline; }
 .status { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--good-bg); color: var(--ink); font-size: 14px; }
 .status strong { display: block; font-size: 15px; margin-bottom: 2px; }
 .status .hint { display: inline; }
@@ -318,7 +317,7 @@ button { cursor: pointer; }
 .status.bad { background: var(--bad-bg); }
 .status.done { background: var(--sunken); }
 .savedbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin-top: 10px; padding: 4px 14px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
-.link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: underline; text-align: left; }
+.link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary-ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-align: left; }
 .save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-top: 2px; }
 .save-row .hint { font-size: 12.5px; }
 .custom-note.auto { background: var(--mid-bg); color: var(--mid); }
@@ -410,10 +409,10 @@ div.more { cursor: default; }
 .route-map { position: relative; height: 240px; margin: 0 0 10px; border-radius: 14px; overflow: hidden; background: var(--sunken); }
 .route-map[hidden] { display: none; }
 .route-map .maplibregl-canvas { outline: none; }
-.map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #0b1420; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
-.map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #0b1420; }
-.map-flag.end { background: var(--mrh-blau); }
-.place { pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #4a5f78; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
+.map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #2b1a1c; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
+.map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #2b1a1c; }
+.map-flag.end { background: var(--hh-rot); }
+.place { pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #5a4b4d; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
 .route-map.dark .place { color: #9fb0c8; text-shadow: 0 0 3px #1b2636, 0 0 3px #1b2636, 0 0 2px #1b2636; }
 .place.c, .place.t { font-size: 14px; font-weight: 700; }
 .place.s { letter-spacing: 0.02em; }
