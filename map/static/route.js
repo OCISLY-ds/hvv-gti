@@ -523,7 +523,7 @@
       return r;
     };
     if (late && Array.isArray(late.hist)) {
-      const scope = late.scope === "ganze Linie" ? "ganze Linie" : "dieser Halt";
+      const scope = late.scope === "ganze Linie" ? "ganze Linie" : /^Vorhalt/.test(late.scope) ? `${late.scope} (am Endhalt fehlen Messdaten)` : "dieser Halt";
       const when = { "gleiche Tagesart und Uhrzeit": "Werktag bzw. Wochenende, ±1 Stunde um die Abfahrt", "gleiche Uhrzeit": "±1 Stunde um die Abfahrt, alle Wochentage", "alle Zeiten": "alle Tageszeiten" }[late.window] || late.window;
       box.append(node("div", "sc-h", "Verspätung bei Ankunft"), node("div", "sc-s", `${scope} · ${when} · letzte 30 Tage`));
       const max = Math.max(...late.hist, 1);
@@ -611,7 +611,7 @@
     const bits = [];
     const lateOk = st && st.alight && st.alight.n >= MIN_N;
     const cancelOk = st && known(st.cancelRate) && st.cancelN >= MIN_N;
-    if (lateOk) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : ""}`);
+    if (lateOk) bits.push(`pünktlich ${pct(st.alight.ontimePct)} · Ø ${num(st.alight.avgMin)} min${st.alight.scope === "ganze Linie" ? " (Linie gesamt)" : /^Vorhalt/.test(st.alight.scope) ? ` (${st.alight.scope})` : ""}`);
     if (cancelOk) bits.push(`Ausfälle ${pct(num(st.cancelRate))}`);
     if (bits.length) {
       const chart = statChart(lateOk ? st.alight : null, cancelOk ? st.cancelRate : null);

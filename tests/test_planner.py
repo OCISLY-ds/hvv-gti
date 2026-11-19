@@ -156,6 +156,26 @@ class ReliabilityTests(unittest.TestCase):
         # die Testreihen haben nur 60 Messungen je Halt; die Schwelle fuer "zu wenig am Halt" gilt in eigenen Tests mit dem echten Wert
         self.enterContext(unittest.mock.patch.object(planner, "MIN_STATION_SAMPLES", 25))
 
+    def test_terminus_without_usable_data_uses_the_last_reliable_stop(self):
+        noon = datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp()
+        asked = []
+
+        class Stub:
+            def delays(self, measurement, line, station):
+                return [(noon + i, 0.0) for i in range(42)]  # Stade: nur Nullen
+
+            def train_delays(self, line, station, direction):
+                asked.append((line, station, direction))
+                return [(noon + i, 120.0 * (i % 4)) for i in range(400)]
+
+            def cancel_rate(self, line):
+                return (200, 0.01)
+
+        dist = Reliability(Stub(), random.Random(1)).distribution("S5", "Stade", self.when)
+        self.assertEqual(asked, [("S5", "Dollern", "Stade")])
+        self.assertEqual((dist["scope"], dist["n"]), ("Vorhalt Dollern", 400))
+        self.assertGreater(max(dist["values"]), 0)
+
     def test_a_station_with_too_few_measurements_falls_back_to_the_whole_line(self):
         self.enterContext(unittest.mock.patch.object(planner, "MIN_STATION_SAMPLES", 100))
         noon = datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp()

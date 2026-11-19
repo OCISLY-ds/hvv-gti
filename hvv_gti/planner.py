@@ -28,6 +28,9 @@ log = logging.getLogger("hvv_gti.planner")
 TZ = ZoneInfo("Europe/Berlin")
 ONTIME_S = 180  # "puenktlich": hoechstens 3 Minuten Verspaetung
 MIN_SAMPLES = 25  # darunter wird auf einen groeberen Zeitraum zurueckgefallen
+# Endhalte ohne brauchbare Messung: die GTI kappt die S5 vor Stade (Zuege Richtung Stade enden in den Daten in Dollern, nur ~6 % haben
+# einen Stade-Halt, immer mit 0 min). Dann gilt die Verspaetung am letzten zuverlaessigen Halt: (Linie, Halt) -> (Ersatzhalt, Richtung)
+PROXY_ARRIVALS = {("S5", "Stade"): ("Dollern", "Stade")}
 MIN_STATION_SAMPLES = 100  # hat ein Halt insgesamt weniger Messungen, gilt die ganze Linie (wie die Schwelle, ab der die Seite Statistik zeigt; Stade hatte 42 Nullen)
 SIMULATIONS = 4000
 TRANSFER_STEPS = range(0, 6)  # waehlbare Mindest-Umsteigezeit in Minuten (Regler in der Karte); 0 = nur der Fahrplan der GTI
@@ -127,6 +130,22 @@ class InfluxReader:
                 continue
         return out
 
+    def train_delays(self, line: str, station: str, direction: str) -> list[tuple[float, float]]:
+        """Wie `delays`, aber aus den Zuglaeufen des Korridors (hvv_train_stop, delay_min) fuer eine Fahrtrichtung."""
+        flux = (
+            f'from(bucket: {flux_str(self.bucket)}) |> range(start: {LOOKBACK}) '
+            f'|> filter(fn: (r) => r._measurement == "hvv_train_stop" and r._field == "delay_min" and r.line == {flux_str(line)} '
+            f'and r.station == {flux_str(station)} and r.direction == {flux_str(direction)}) '
+            '|> keep(columns: ["_time", "_value"]) |> limit(n: 6000)'
+        )
+        out = []
+        for row in self.query(flux):
+            try:
+                out.append((datetime.fromisoformat(row["_time"].replace("Z", "+00:00")).timestamp(), float(row["_value"]) * 60))
+            except (KeyError, ValueError):
+                continue
+        return out
+
     def cancel_rate(self, line: str) -> tuple[int, float] | None:
         measurements = " or ".join(f'r._measurement == "{m}"' for m in CANCEL_MEASUREMENTS)
         flux = (
@@ -186,6 +205,12 @@ class Reliability:
         mode = data_mode(line)
         if self.reader is None or mode is None:
             return None
+        proxy = PROXY_ARRIVALS.get((line, station))
+        if proxy and hasattr(self.reader, "train_delays"):
+            found = self._cached(("t", line, *proxy), lambda: self.reader.train_delays(line, *proxy))
+            if len(found) >= MIN_STATION_SAMPLES:
+                values, window = pick_window(found, when)
+                return {"values": values, "n": len(values), "scope": f"Vorhalt {proxy[0]}", "window": window}
 
         def collect(where: str | None) -> list[tuple[float, float]]:
             found: list[tuple[float, float]] = []
