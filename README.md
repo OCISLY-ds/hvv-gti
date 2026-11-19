@@ -200,6 +200,21 @@ Kurz: machbar, aber ohne GPS, nur mit berechneten Positionen auf Minutenniveau. 
 python3 -m hvv_gti probe-vehicles --types S_BAHN --line S5
 ```
 
+## Routenplaner auf einer zweiten Maschine (TimescaleDB)
+
+Der Pi bleibt unverändert (Collector, InfluxDB, Grafana). Zusätzlich kann der Routenplaner mit den 3D-Bahnhöfen auf einer zweiten Maschine mit **TimescaleDB**
+statt InfluxDB laufen, ohne Grafana. Die Maschinen sprechen **nie direkt miteinander**: der Collector schreibt Line-Protocol-Dateien (`HVV_SINKS=spool`, Spool in `data/spool`),
+der Shipper (`docker compose --profile ship up -d hvv-shipper`) lädt sie alle 6 h als Paket in ein privates GitHub-Release (`data-YYYY-MM`), der Importer
+der neuen Maschine (`python -m hvv_gti import-github`) liest sie ein. Die Historie kommt einmalig mit `python -m hvv_gti export-history` (Release `data-history`),
+Kartenkacheln, gelernte Gleise und Logos mit `push-assets`/`pull-assets` (Release `assets-map`).
+
+* `hvv_gti/tsdb.py`: Tabellen (Hypertabellen, Kompression ab 45 Tagen), Einlesen per COPY + Upsert (gleicher Punkt überschreibt: Historie und Live-Daten dürfen
+  sich überlappen) und `TimescaleReader`, den der Routenplaner statt des Influx-Lesers nutzt, sobald `HVV_DB_URL` gesetzt ist.
+* `deploy/newhost/`: Compose für die neue Maschine (Datenbank mit Nur-Lese-Rolle, Importer, Planer, Cloudflare-Tunnel) und
+  **`MIGRATION.md`** mit allen Schritten, Prüfungen, Sicherung und Rückweg.
+* Tests gegen eine echte TimescaleDB: `sudo docker compose --profile dbtest up -d hvv-dbtest`, dann die Tests im Container mit `HVV_TEST_DB` laufen lassen
+  (ohne die Variable werden sie übersprungen).
+
 ## Bahnhöfe in 3D (Prototyp)
 
 `/station.html` zeigt große Umsteigebahnhöfe als 3D-Modell: je Ebene eine Höhe (MapLibre `fill-extrusion`), Bahnsteige nach Verkehrsmittel

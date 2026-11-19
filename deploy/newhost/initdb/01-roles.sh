@@ -1,5 +1,5 @@
 #!/bin/bash
-# Laeuft einmal beim ersten Start der Datenbank: Nur-Lese-Rolle fuer Routenplaner und Grafana (sieht auch spaeter angelegte Tabellen).
+# Laeuft einmal beim ersten Start der Datenbank: Nur-Lese-Rolle fuer den Routenplaner (sieht auch spaeter angelegte Tabellen).
 set -euo pipefail
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<SQL
 create role hvv_ro login password '${HVV_RO_PASSWORD}';

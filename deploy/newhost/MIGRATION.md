@@ -1,4 +1,7 @@
-# Umzug auf eine stärkere Maschine (TimescaleDB statt InfluxDB)
+# Umzug des Routenplaners auf eine stärkere Maschine (TimescaleDB statt InfluxDB)
+
+Der **Pi bleibt wie er ist**: Collector, InfluxDB und Grafana mit allen Dashboards laufen unverändert weiter. Die neue Maschine bekommt nur den
+**Routenplaner** (mit 3D-Bahnhöfen) und seine eigene Datenbank; Grafana gibt es dort nicht.
 
 ```
    Raspberry Pi (bleibt)                      GitHub (privates Repo)                  Neue Maschine
@@ -6,8 +9,8 @@
  │ hvv-collector            │  Pakete alle  │ Releases:              │ holt   │ importer ──► TimescaleDB        │
  │  fragt die GTI ab        │  6 h (gzip)   │  data-YYYY-MM  (live)  │ alle   │                  ▲      ▲       │
  │  schreibt Spool-Dateien  ├──────────────►│  data-history (einmal) │◄───────┤ map (Planer, 3D) ┘      │       │
- │ hvv-shipper              │               │  assets-map (Kacheln)  │ 5 min  │ grafana (SQL-Dashboards)┘       │
- │ (Influx nur noch IoT)    │               └────────────────────────┘        │ tunnel (Cloudflare)             │
+ │ hvv-shipper              │               │  assets-map (Kacheln)  │ 5 min  │                                 │
+ │ Influx + Grafana bleiben │               └────────────────────────┘        │ tunnel (Cloudflare)             │
  └──────────────────────────┘                                                 └─────────────────────────────────┘
 ```
 
@@ -64,7 +67,7 @@ cp .env.example .env && nano .env          # Passwörter, GitHub-Token (Read-onl
 mkdir -p ../../data ../../map/data
 docker compose up -d --build timescaledb dbinit
 docker compose run --rm importer pull-assets     # holt Kacheln, Gleise, Logos nach map/data und data/icons
-docker compose up -d                              # importer, map, grafana
+docker compose up -d                              # importer, map
 docker compose logs -f importer                   # liest data-history und alle data-YYYY-MM Pakete ein
 ```
 
@@ -81,12 +84,11 @@ Der Importer wiederholt fehlgeschlagene Pakete von selbst; `hvv_import_log` zeig
 
 ## 4. Umschalten
 
-1. Auf der neuen Maschine alles prüfen: Planer unter `http://<host>:8090/`, Grafana unter `http://<host>:3000/` (Login `admin` + `GRAFANA_ADMIN_PASSWORD`), Dashboards **„HVV …“**.
+1. Auf der neuen Maschine alles prüfen: Planer unter `http://<host>:8090/`.
 2. Öffentlicher Zugang: `TUNNEL_TOKEN` in `.env`, dann `docker compose --profile tunnel up -d tunnel`. Danach auf dem **Pi** `hvv-tunnel` stoppen
    (`sudo docker compose stop hvv-tunnel hvv-proxy`), damit nur ein Connector antwortet.
-3. Pi aufräumen: `HVV_SINKS=spool` in der `.env` (Influx bekommt keine HVV-Daten mehr), `sudo docker compose up -d hvv-collector`, `hvv-map` stoppen
-   (`sudo docker compose stop hvv-map`). Telegraf, Fritzbox-Export und Tranco laufen unverändert mit dem kleinen Influx weiter.
-4. Erst wenn die neue Maschine ein paar Tage stabil läuft: den Bucket `hvv` im Pi-Influx löschen oder lassen (sichert nur Platz und RAM).
+3. Auf dem Pi läuft alles weiter (Influx und Grafana bleiben vollständig, `HVV_SINKS=influx,spool`). Nur den Planer dort abschalten, wenn er nicht mehr gebraucht wird
+   (`sudo docker compose stop hvv-map`).
 
 ## 5. Betrieb
 
@@ -101,13 +103,11 @@ Der Importer wiederholt fehlgeschlagene Pakete von selbst; `hvv_import_log` zeig
 
 ## 6. Rückweg
 
-Solange `HVV_SINKS=influx,spool` gilt, ist alles auf dem Pi vollständig: `hvv-map` ohne `HVV_DB_URL` liest wieder aus Influx, die Flux-Dashboards
-(`grafana/dashboards/`) bleiben im Pi-Grafana. Nach `HVV_SINKS=spool` fehlen im Pi-Influx die neuen Daten; dann stattdessen die Daten aus der neuen
-Datenbank oder den Paketen holen.
+Der Pi ist nie umgestellt worden: `hvv-map` ohne `HVV_DB_URL` liest dort weiter aus Influx. Die neue Maschine einfach abschalten.
 
 ## 7. Sicherheit
 
 * `.env`-Dateien nie committen oder hochladen (sie sind in `.gitignore`). Tokens nur mit den genannten Rechten und nur für dieses Repo.
-* Die Datenbank hört nur auf `127.0.0.1` der neuen Maschine. Planer und Grafana lesen mit der Rolle `hvv_ro` (nur SELECT).
+* Die Datenbank hört nur auf `127.0.0.1` der neuen Maschine. Der Planer liest mit der Rolle `hvv_ro` (nur SELECT).
 * Der Importer liest ausschließlich Anhänge der Releases `data-*` und nur Zeilen im Line-Protocol-Format in feste Tabellen; Unbekanntes landet als JSON in
   `hvv_other` und wird nie ausgeführt. `pull-assets` entpackt nur erlaubte Pfade (`map/data/…`, `data/icons/…`).

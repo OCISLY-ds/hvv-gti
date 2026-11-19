@@ -1,4 +1,4 @@
-# Neue Maschine: TimescaleDB, Importer (holt die Datenpakete aus GitHub), Routenplaner, Grafana und (optional) Cloudflare-Tunnel.
+# Neue Maschine: TimescaleDB, Importer (holt die Datenpakete aus GitHub), Routenplaner (mit 3D-Bahnhoefen) und (optional) Cloudflare-Tunnel. Kein Grafana: das bleibt mit Influx auf dem Pi.
 # Der Pi sammelt weiter die GTI-Daten und verschickt sie per GitHub-Release; die Maschinen sprechen nie direkt miteinander.
 # Start:  cd deploy/newhost && cp .env.example .env && (ausfuellen) && docker compose up -d --build
 # Aufbau und Umzug Schritt fuer Schritt: MIGRATION.md
@@ -20,7 +20,7 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
     ports:
-      - "127.0.0.1:5432:5432"  # nur lokal (Backup, psql); Grafana und Planer erreichen sie im Compose-Netz
+      - "127.0.0.1:5432:5432"  # nur lokal (Backup, psql); der Planer erreicht sie im Compose-Netz
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d hvv"]
       interval: 10s
@@ -80,26 +80,6 @@ services:
     depends_on:
       dbinit: {condition: service_completed_successfully}
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: hvv-grafana
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?in .env setzen}
-      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS:-false}
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-      GF_AUTH_ANONYMOUS_HIDE_VERSION: "true"
-      HVV_RO_PASSWORD: ${HVV_RO_PASSWORD}
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../../grafana/dashboards-sql:/etc/grafana/dashboards:ro
-      - ../../data/icons:/usr/share/grafana/public/img/hvv:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      dbinit: {condition: service_completed_successfully}
-
   # Oeffentlicher Zugang zum Planer ueber Cloudflare (Profil "tunnel"): im Dashboard zeigt der Public Hostname auf http://localhost:8090
   tunnel:
     profiles: ["tunnel"]
@@ -113,4 +93,3 @@ services:
 
 volumes:
   db-data:
-  grafana-data:

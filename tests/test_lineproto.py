@@ -33,5 +33,26 @@ class RoundTripTests(unittest.TestCase):
                 parse_line(bad)
 
 
+class FastPathTests(unittest.TestCase):
+    def test_fast_and_exact_parser_agree_on_plain_and_special_lines(self):
+        import random
+
+        rng = random.Random(3)
+        words = ["S1", "Altona", "Hamburg Hbf", "a,b", "x=y", "Über\\Weg", 'sagt "hi"', "", "plain"]
+        for _ in range(400):
+            tags = {f"t{i}": rng.choice(words) for i in range(rng.randrange(0, 4))}
+            fields = {"i": rng.randrange(-5, 99999), "f": rng.random() * 100, "b": rng.random() < 0.5}
+            if rng.random() < 0.3:
+                fields["s"] = rng.choice(words)
+            line = line_protocol("hvv_x", tags, fields, rng.randrange(10**18, 2 * 10**18))
+            got = parse_line(line)
+            self.assertEqual((got[1], got[2]), ({k: v for k, v in tags.items() if v != ""}, fields), line)
+
+    def test_fast_path_rejects_broken_lines_like_the_exact_one(self):
+        for bad in ("nofields", "m,a x=notanumber 1", "m,badtag x=1i 1", "m x 1", "m a=1i x"):
+            with self.assertRaises(LineError, msg=bad):
+                parse_line(bad)
+
+
 if __name__ == "__main__":
     unittest.main()

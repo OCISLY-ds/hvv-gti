@@ -129,5 +129,8 @@ services:
       - "127.0.0.1:5544:5432"
     mem_limit: 300m
     command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30", "-c", "work_mem=8MB", "-c", "timescaledb.telemetry_level=off"]
-    tmpfs:
-      - /var/lib/postgresql/data
+    volumes:
+      - dbtest-data:/var/lib/postgresql/data  # auf Platte, nicht tmpfs: die Testdaten (ein Monat HVV-Historie) sind mehrere hundert MB gross
+
+volumes:
+  dbtest-data:
