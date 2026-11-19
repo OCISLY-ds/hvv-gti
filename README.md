@@ -200,6 +200,22 @@ Kurz: machbar, aber ohne GPS, nur mit berechneten Positionen auf Minutenniveau. 
 python3 -m hvv_gti probe-vehicles --types S_BAHN --line S5
 ```
 
+## Bahnhöfe in 3D (Prototyp)
+
+`/station.html` zeigt große Umsteigebahnhöfe als 3D-Modell: je Ebene eine Höhe (MapLibre `fill-extrusion`), Bahnsteige nach Verkehrsmittel
+gefärbt (S grün, U blau, Regional/Fern rot), Gänge, Gleise, Räume, Treppen als Stufen, Rolltreppen und Aufzüge, dazu der Umsteigeweg zwischen
+zwei Bahnsteigen als leuchtendes Band mit Zeit, Länge und Schritten. Ebene wählen blendet die übrigen gedimmt ein, der Regler zieht die
+Ebenen auseinander.
+
+Die Daten kommen aus OpenStreetMap (Overpass), nicht aus der GTI: `python3 scripts/build_stations.py [--offline] [id ...]` baut
+`map/seed/stations/<id>.json` (Bahnhöfe stehen in `STATIONS` im Skript; Rohdaten liegen in `map/data/osm-cache/`). `hvv_gti/stationmap.py`
+klassifiziert die Elemente, baut einen ebenenbewussten Fußwegegraphen (OSM-Knoten + Ebene; Ebenen verbindet nur eine Treppe, Rolltreppe oder ein
+Aufzug) und rechnet mit Dijkstra den Weg zwischen allen Bahnsteigen. `src` am Weg sagt, ob er berechnet (`graph`) oder nur aus der Luftlinie
+geschätzt (`estimated`) ist. Wie gut ein Bahnhof wird, hängt an OSM: fehlende Bahnsteige, Treppen oder Aufzüge sind Lücken im Modell.
+`scripts/preview_station.py` zeichnet ein Modell ohne Browser als PNG zur Kontrolle der Daten.
+
+Stand: Hauptbahnhof (110 Wege, alle berechnet) und Berliner Tor (12 berechnet, 8 geschätzt). Die Seite wurde noch in keinem Browser gesehen.
+
 ## Nutzungsbedingungen
 
 Die GTI-Daten sind für kostenlose Fahrgastinformation freigegeben, ein Link zu hvv.de gehört dazu (steht im Hinweis-Panel des Dashboards). Mehr als im Schnitt 1 Aufruf pro Sekunde führt zu einer vorübergehenden Sperre; `HVV_MIN_REQUEST_INTERVAL` erzwingt den Abstand. Bedingungen bitte selbst gegenlesen, bevor etwas öffentlich gezeigt wird.

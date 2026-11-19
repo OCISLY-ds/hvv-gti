@@ -433,6 +433,30 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual(gzip.decompress(packed), plain)
         self.assertLess(len(packed), len(plain) / 2)
 
+    def test_station_models_are_served_from_the_seed_folder_only(self):
+        import urllib.request
+
+        base, _, _ = self._serve(live=False)
+        (Path(self._static_dir) / "station.html").write_text("station")
+
+        def fetch(path, **headers):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(base + path, headers=headers), timeout=5) as r:
+                    return r.status, dict(r.headers), r.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, dict(exc.headers), b""
+
+        status, headers, body = fetch("/stations/index.json")
+        self.assertEqual(status, 200)
+        self.assertIn("hamburg-hbf", [s["id"] for s in json.loads(body)])
+        status, headers, body = fetch("/stations/hamburg-hbf.json", **{"Accept-Encoding": "gzip"})  # mehrere hundert KB: gepackt ausliefern
+        self.assertEqual((status, headers.get("Content-Encoding")), (200, "gzip"))
+        model = json.loads(gzip.decompress(body))
+        self.assertTrue(model["platforms"] and model["paths"] and model["features"]["features"])
+        self.assertEqual(fetch("/stations/../signals.json")[0], 404)  # nicht aus dem Stationsordner heraus
+        self.assertEqual(fetch("/stations/nicht-da.json")[0], 404)
+        self.assertEqual(fetch("/station.html")[2], b"station")
+
     def test_course_endpoint_returns_every_stop_of_the_trip(self):
         import urllib.parse
 

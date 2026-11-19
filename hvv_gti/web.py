@@ -38,7 +38,8 @@ VEHICLE_TYPES = {mode: vehicle_type for vehicle_type, mode in MODES.items()}
 COURSE_WINDOW_S = 5400  # Halteverlauf: je 90 min zurueck und voraus, das deckt auch den RE5 Cuxhaven - Hamburg ab
 COURSE_CACHE_S = 60
 TRACKS_SAVE_INTERVAL_S = 300
-SEED_SIGNALS = Path(__file__).resolve().parent.parent / "map" / "seed" / "signals.json"  # OSM-Signale als Startdatei im Image
+SEED_DIR = Path(__file__).resolve().parent.parent / "map" / "seed"
+SEED_SIGNALS = SEED_DIR / "signals.json"  # OSM-Signale als Startdatei im Image
 KX_M = math.cos(math.radians(53.55)) * 111320  # Meter je Grad Laenge/Breite bei Hamburg
 KY_M = 110540
 FIRST_FILL_WINDOW_S = 3900  # einmalig groesseres Fenster (> Takt des RE5), damit die Linien sofort komplett gezeichnet werden
@@ -669,7 +670,11 @@ class Handler(BaseHTTPRequestHandler):
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
         if not self.app.live and rel in LIVE_FILES:
             return self._send(404, b"Live-Karte ist deaktiviert", "text/plain")
-        root = self.app.static_dir.resolve()
+        # Bahnhofsmodelle fuer die 3D-Ansicht (scripts/build_stations.py) liegen als Startdaten im Image, nicht unter static/
+        if rel.startswith("stations/"):
+            root, rel = (SEED_DIR / "stations").resolve(), rel[len("stations/"):]
+        else:
+            root = self.app.static_dir.resolve()
         target = (root / rel).resolve()
         if root not in target.parents and target != root:
             return self._send(404, b"not found", "text/plain")

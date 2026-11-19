@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0f1b1d">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Bahnhof in 3D</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="station.css">
+</head>
+<body>
+<div id="app">
+  <div id="map" role="application" aria-label="3D-Modell des Bahnhofs"></div>
+  <aside id="sheet" aria-label="Bahnhof und Umstieg">
+    <header>
+      <h1>Bahnhof in 3D</h1>
+      <div id="stations" class="chips" role="tablist" aria-label="Bahnhof wählen"></div>
+    </header>
+    <section aria-labelledby="h-levels">
+      <h2 id="h-levels">Ebene</h2>
+      <div id="levels" class="chips" role="group" aria-label="Ebene zeigen"></div>
+      <label class="row">
+        <span>Ebenenabstand</span>
+        <input id="gap" type="range" min="1" max="4" step="0.25" value="2" aria-label="Abstand zwischen den Ebenen">
+      </label>
+      <label class="row check"><input id="bld" type="checkbox"><span>Gebäude zeigen</span></label>
+    </section>
+    <section aria-labelledby="h-way">
+      <h2 id="h-way">Umstieg</h2>
+      <div class="pair">
+        <label>Von <select id="from"></select></label>
+        <label>Nach <select id="to"></select></label>
+      </div>
+      <div id="way" aria-live="polite"></div>
+    </section>
+    <p id="note" class="note"></p>
+  </aside>
+</div>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="station.js"></script>
+</body>
+</html>
