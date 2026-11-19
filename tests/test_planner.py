@@ -623,3 +623,26 @@ class PrewarmTests(unittest.TestCase):
         found = []
         found += s
         self.assertEqual(found, [(1.5, 60.0), (2.5, 0.0)])
+
+
+class SamplesWindowTests(unittest.TestCase):
+    def test_local_parts_match_a_direct_conversion_also_across_the_dst_change(self):
+        # Zeitumstellung 2026-10-25 (Sommer -> Winterzeit) und der Wechsel um 01:00 UTC
+        start = datetime(2026, 10, 24, 20, 0, tzinfo=TZ).timestamp()
+        rows = [(start + i * 1234.5, 0.0) for i in range(700)]
+        hours, weekends = planner.Samples(rows).local_parts()
+        for (ts, _), hour, weekend in zip(rows, hours, weekends):
+            local = datetime.fromtimestamp(ts, TZ)
+            self.assertEqual((hour, bool(weekend)), (local.hour, local.weekday() >= 5), local)
+
+    def test_pick_window_gives_the_same_answer_for_samples_and_a_plain_list(self):
+        rng = random.Random(5)
+        base = datetime(2026, 11, 1, 0, 0, tzinfo=TZ).timestamp()
+        rows = [(base + rng.randrange(0, 20 * 86400), float(60 * rng.randrange(0, 6))) for _ in range(900)]
+        for when in (datetime(2026, 11, 19, 8, 5, tzinfo=TZ), datetime(2026, 11, 21, 23, 40, tzinfo=TZ), datetime(2026, 11, 19, 0, 10, tzinfo=TZ)):
+            self.assertEqual(planner.pick_window(planner.Samples(rows), when), planner.pick_window(rows, when), when)
+        self.assertEqual(planner.pick_window(planner.Samples(rows[:3]), when)[1], "alle Zeiten")
+
+    def test_joined_samples_keep_every_row(self):
+        a, b = planner.Samples([(1.0, 60.0)]), planner.Samples([(2.0, 0.0), (3.0, 120.0)])
+        self.assertEqual(list(planner.Samples.join([a, b])), [(1.0, 60.0), (2.0, 0.0), (3.0, 120.0)])

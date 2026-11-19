@@ -95,20 +95,48 @@ def flux_str(value: str) -> str:
 
 
 class Samples:
-    """Messreihe (Zeitstempel, Verspaetung) in zwei `array`s statt als Liste von Tupeln (rund 6x weniger Speicher im Zwischenspeicher)."""
+    """Messreihe (Zeitstempel, Verspaetung) in `array`s statt als Liste von Tupeln (rund 6x weniger Speicher im Zwischenspeicher).
+    Ortsstunde und Tagesart je Messung werden beim ersten Bedarf einmal berechnet; `pick_window` muss dann nicht mehr
+    bei jeder Anfrage tausende Zeitstempel in Datumsobjekte umrechnen (das war der groesste Teil der Rechenzeit einer Anfrage)."""
 
-    __slots__ = ("ts", "values")
+    __slots__ = ("ts", "values", "_parts")
 
     def __init__(self, rows):
         rows = list(rows)
         self.ts = array("d", (t for t, _ in rows))
         self.values = array("d", (v for _, v in rows))
+        self._parts = None
+
+    @classmethod
+    def join(cls, parts: "list[Samples]") -> "Samples":
+        out = cls(())
+        for part in parts:
+            out.ts.extend(part.ts)
+            out.values.extend(part.values)
+        return out
 
     def __len__(self):
         return len(self.ts)
 
     def __iter__(self):
         return zip(self.ts, self.values)
+
+    def local_parts(self) -> tuple[array, array]:
+        """(Ortsstunde, Wochenende 0/1) je Messung."""
+        if self._parts is None:
+            # Der UTC-Versatz Berlins ist immer eine ganze Stunde und wechselt nur zur vollen UTC-Stunde: je UTC-Stunde einmal umrechnen
+            per_hour: dict[int, tuple[int, bool]] = {}
+            hours, weekends = array("b"), array("b")
+            for t in self.ts:
+                bucket = int(t // 3600)
+                parts = per_hour.get(bucket)
+                if parts is None:
+                    local = datetime.fromtimestamp(bucket * 3600, TZ)
+                    parts = per_hour[bucket] = (local.hour, local.weekday() >= 5)
+                hours.append(parts[0])
+                weekends.append(parts[1])
+            self._parts = (hours, weekends)
+        return self._parts
 
 
 class InfluxReader:
@@ -201,22 +229,29 @@ class InfluxReader:
 # ---- Statistik ----
 
 
-def pick_window(samples: list[tuple[float, float]], when: datetime) -> tuple[list[float], str]:
+def pick_window(samples, when: datetime) -> tuple[list[float], str]:
     """Verspaetungen zur gleichen Tagesart (Werktag/Wochenende) und Uhrzeit (+-1 h), sonst gleiche Uhrzeit, sonst alle."""
     weekend = when.weekday() >= 5
     hour = when.hour
+    near_hours = {(hour - 1) % 24, hour, (hour + 1) % 24}
+    if isinstance(samples, Samples):
+        hours, weekends = samples.local_parts()
+        values = samples.values
+        tight = [v for v, h, w in zip(values, hours, weekends) if h in near_hours and bool(w) == weekend]
+        if len(tight) >= MIN_SAMPLES:
+            return tight, "gleiche Tagesart und Uhrzeit"
+        hourly = [v for v, h in zip(values, hours) if h in near_hours]
+        if len(hourly) >= MIN_SAMPLES:
+            return hourly, "gleiche Uhrzeit"
+        return list(values), "alle Zeiten"
 
     def local(ts: float) -> datetime:
         return datetime.fromtimestamp(ts, TZ)
 
-    def near(ts: float) -> bool:
-        diff = abs(local(ts).hour - hour)
-        return min(diff, 24 - diff) <= 1
-
-    tight = [v for ts, v in samples if near(ts) and (local(ts).weekday() >= 5) == weekend]
+    tight = [v for ts, v in samples if local(ts).hour in near_hours and (local(ts).weekday() >= 5) == weekend]
     if len(tight) >= MIN_SAMPLES:
         return tight, "gleiche Tagesart und Uhrzeit"
-    hourly = [v for ts, v in samples if near(ts)]
+    hourly = [v for ts, v in samples if local(ts).hour in near_hours]
     if len(hourly) >= MIN_SAMPLES:
         return hourly, "gleiche Uhrzeit"
     return [v for _, v in samples], "alle Zeiten"
@@ -325,11 +360,9 @@ class Reliability:
                 values, window = pick_window(found, when)
                 return {"values": values, "n": len(values), "scope": f"Vorhalt {proxy[0]}", "window": window}
 
-        def collect(where: str | None) -> list[tuple[float, float]]:
-            found: list[tuple[float, float]] = []
-            for measurement in MEASUREMENTS[mode]:
-                found += self._cached(("d", measurement, line, where))
-            return found
+        def collect(where: str | None) -> Samples:
+            parts = [self._cached(("d", measurement, line, where)) for measurement in MEASUREMENTS[mode]]
+            return parts[0] if len(parts) == 1 else Samples.join(parts)
 
         samples = collect(station)
         scope = "Halt"
@@ -380,24 +413,45 @@ class Reliability:
             for t in TRANSFER_STEPS:
                 slack[(i, t)] = buffer - max(walk_s, t * 60)
         if rides and times_known and (full or any(info[i - 1][1] is not None for i in range(1, len(rides)))):
+            # Die Reserve sinkt mit der Mindest-Umsteigezeit T, ein Anschluss ist also fuer alle T unter einer Schwelle k erreicht
+            # (k = Zahl der Stufen, bei denen Verspaetung des Zubringers - Verspaetung des Anschlusszugs < Reserve). Je Ziehung wird nur
+            # k gezaehlt; die Anteile je T ergeben sich danach aus der Summe aller Ziehungen mit k > T.
+            steps = len(TRANSFER_STEPS)
+            slack_of = {i: [slack[(i, t)] for t in TRANSFER_STEPS] for i in range(1, len(rides))}
+            each_k = {i: [0] * (steps + 1) for i in range(1, len(rides))}
+            all_k = [0] * (steps + 1)
+            ontime_k = [0] * (steps + 1)
+            choice = self.rng.choice
             for _ in range(SIMULATIONS):
-                board_d = [self.rng.choice(b["values"]) if b else 0.0 for b, _, _ in info]
-                alight_d = [self.rng.choice(a["values"]) if a else None for _, a, _ in info]
-                for t in TRANSFER_STEPS:
-                    ok_all = True
-                    for i in range(1, len(rides)):
-                        if i in stays:
-                            each_ok[(i, t)] += 1  # derselbe Zug: der Anschluss ist sicher
-                            continue
-                        feeder = alight_d[i - 1]
+                board_d = [choice(b["values"]) if b else 0.0 for b, _, _ in info]
+                alight_d = [choice(a["values"]) if a else None for _, a, _ in info]
+                k_all = steps
+                for i in range(1, len(rides)):
+                    if i in stays:
+                        each_k[i][steps] += 1  # derselbe Zug: der Anschluss ist sicher
+                        continue
+                    feeder = alight_d[i - 1]
+                    k = 0
+                    if feeder is not None:
                         # verspaetete Zuege ziehen die Reserve auf: 1 min Reserve und 1 min Verspaetung = verpasst
-                        if feeder is not None and feeder - board_d[i] < slack[(i, t)]:
-                            each_ok[(i, t)] += 1
-                        else:
-                            ok_all = False
-                    if ok_all and full:
-                        all_ok[t] += 1
-                        all_ok_ontime[t] += alight_d[-1] <= ONTIME_S
+                        diff = feeder - board_d[i]
+                        for limit in slack_of[i]:
+                            if diff < limit:
+                                k += 1
+                            else:
+                                break
+                    each_k[i][k] += 1
+                    if k < k_all:
+                        k_all = k
+                if full:
+                    all_k[k_all] += 1
+                    if alight_d[-1] <= ONTIME_S:
+                        ontime_k[k_all] += 1
+            for t in TRANSFER_STEPS:
+                all_ok[t] = sum(all_k[t + 1:])
+                all_ok_ontime[t] = sum(ontime_k[t + 1:])
+                for i in range(1, len(rides)):
+                    each_ok[(i, t)] = sum(each_k[i][t + 1:])
             if full:
                 by_min = {str(t): {"connectionPct": round(100 * all_ok[t] / SIMULATIONS, 1), "ontimePct": round(100 * all_ok_ontime[t] / SIMULATIONS, 1)} for t in TRANSFER_STEPS}
                 result["byMinTransfer"] = by_min
