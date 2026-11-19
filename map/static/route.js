@@ -841,8 +841,8 @@
   function mapStyle(dark) {
     const L = (id, type, layer, paint, extra) => ({ id, type, source: "hh", "source-layer": layer, paint, ...extra });
     const c = dark
-      ? { bg: "#1b2636", green: "#1f3a33", ind: "#212c3b", land: "#222f40", water: "#0f2a44", bld: "#26344a", mot: "#5b6b85", main: "#43526b", road: "#33415a" }
-      : { bg: "#f2efe9", green: "#d3e6c3", ind: "#e4e1da", land: "#ebe8e1", water: "#a9d3f0", bld: "#dedad2", mot: "#e9a570", main: "#ffffff", road: "#ffffff" };
+      ? { bg: "#1b2636", green: "#1f3a33", ind: "#212c3b", land: "#222f40", water: "#0f2a44", bld: "#26344a", mot: "#43526b", main: "#43526b", road: "#33415a", rail: "#8da2bb", railDash: "#1b2636" }
+      : { bg: "#f2efe9", green: "#d3e6c3", ind: "#e4e1da", land: "#ebe8e1", water: "#a9d3f0", bld: "#dedad2", mot: "#ffffff", main: "#ffffff", road: "#ffffff", rail: "#5d6b7d", railDash: "#f2efe9" };
     return {
       version: 8,
       sources: { hh: { type: "vector", url: "pmtiles://" + new URL("/tiles/hamburg.pmtiles", location.href).href, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' } },
@@ -853,9 +853,19 @@
         L("waterway", "line", "waterway", { "line-color": c.water, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 14, 4] }),
         L("building", "fill", "building", { "fill-color": c.bld }),
         L("road", "line", "road", {
-          "line-color": ["match", ["get", "class"], ["motorway", "motorway_link"], c.mot, "main", c.main, c.road],
+          "line-color": ["match", ["get", "class"], ["motorway", "motorway_link", "main"], c.main, c.road], // Autobahnen sind nicht hervorgehoben, die Bahn schon
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 12, 1.2, 16, 4],
-        }, { filter: ["!=", ["get", "class"], "path"] }),
+        }, { filter: ["!", ["in", ["get", "class"], ["literal", ["path", "major_rail", "minor_rail"]]]] }),
+        // Bahnstrecken (S-, U-, Regional- und Fernbahn): kraeftige Linie mit hellen Querstrichen, Strassenbahn schmaler
+        L("rail", "line", "road", {
+          "line-color": c.rail,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.4, 12, 2.4, 16, 5],
+        }, { filter: ["in", ["get", "class"], ["literal", ["major_rail", "minor_rail"]]], layout: { "line-cap": "butt" } }),
+        L("rail-dash", "line", "road", {
+          "line-color": c.railDash,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 1.2, 16, 2.6],
+          "line-dasharray": [3, 3],
+        }, { filter: ["==", ["get", "class"], "major_rail"] }),
       ],
     };
   }
