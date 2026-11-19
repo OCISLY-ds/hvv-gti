@@ -27,7 +27,8 @@ log = logging.getLogger("hvv_gti.planner")
 
 TZ = ZoneInfo("Europe/Berlin")
 ONTIME_S = 180  # "puenktlich": hoechstens 3 Minuten Verspaetung
-MIN_SAMPLES = 25  # darunter wird auf einen groeberen Zeitraum bzw. die ganze Linie zurueckgefallen
+MIN_SAMPLES = 25  # darunter wird auf einen groeberen Zeitraum zurueckgefallen
+MIN_STATION_SAMPLES = 100  # hat ein Halt insgesamt weniger Messungen, gilt die ganze Linie (wie die Schwelle, ab der die Seite Statistik zeigt; Stade hatte 42 Nullen)
 SIMULATIONS = 4000
 TRANSFER_STEPS = range(0, 6)  # waehlbare Mindest-Umsteigezeit in Minuten (Regler in der Karte); 0 = nur der Fahrplan der GTI
 LOOKBACK = "-30d"
@@ -194,7 +195,7 @@ class Reliability:
 
         samples = collect(station)
         scope = "Halt"
-        if len(samples) < MIN_SAMPLES:
+        if len(samples) < MIN_STATION_SAMPLES:
             samples = collect(None)
             scope = "ganze Linie"
         if not samples:

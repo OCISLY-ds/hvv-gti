@@ -1,6 +1,7 @@
 import json
 import random
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta
 
 from hvv_gti import planner
@@ -150,6 +151,24 @@ class PlannerHelperTests(unittest.TestCase):
 
 class ReliabilityTests(unittest.TestCase):
     when = datetime(2026, 11, 7, 13, 23, tzinfo=TZ)
+
+    def setUp(self):
+        # die Testreihen haben nur 60 Messungen je Halt; die Schwelle fuer "zu wenig am Halt" gilt in eigenen Tests mit dem echten Wert
+        self.enterContext(unittest.mock.patch.object(planner, "MIN_STATION_SAMPLES", 25))
+
+    def test_a_station_with_too_few_measurements_falls_back_to_the_whole_line(self):
+        self.enterContext(unittest.mock.patch.object(planner, "MIN_STATION_SAMPLES", 100))
+        noon = datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp()
+
+        class Stub:
+            def delays(self, measurement, line, station):
+                return [(noon + i, 0.0) for i in range(42)] if station == "Stade" else [(noon + i, 120.0 * (i % 3)) for i in range(500)]
+
+            def cancel_rate(self, line):
+                return (200, 0.01)
+
+        dist = Reliability(Stub(), random.Random(1)).distribution("S5", "Stade", self.when)
+        self.assertEqual((dist["scope"], dist["n"]), ("ganze Linie", 500))
 
     def test_bus_lines_have_data_too(self):
         # Buslinien (nur Ziffern) haben Messreihen: Bus 5 je Halt (hvv_bus_stop), die uebrigen aus der Abfahrtstafel (hvv_stop_event)
