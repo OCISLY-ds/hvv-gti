@@ -630,6 +630,12 @@
       el.onerror = () => reject(new Error(src));
       document.head.append(el);
     });
+    if (!document.querySelector('link[href$="maplibre-gl.css"]')) {
+      const css = document.createElement("link"); // erst mit der Karte laden, die Startseite braucht das Stylesheet nicht
+      css.rel = "stylesheet";
+      css.href = "vendor/maplibre-gl.css";
+      document.head.append(css);
+    }
     mapLib = script("vendor/maplibre-gl.js").then(() => script("vendor/pmtiles.js")).then(() => {
       maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
     });
@@ -1305,7 +1311,33 @@
     return row;
   }
 
+  const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Meldung fuer Screenreader: kurz und nur bei echten Aenderungen, nicht die ganze Liste bei jedem Abruf
+  function announce(text) {
+    const el = $("status");
+    el.textContent = "";
+    setTimeout(() => (el.textContent = text), 50);
+  }
+
+  // Der Neuaufbau der Liste darf den Tastaturfokus nicht verlieren (Auto-Aktualisierung alle 30 s)
   function renderResults() {
+    const out = $("out");
+    const active = document.activeElement;
+    let keep = null;
+    if (active && out.contains(active)) {
+      if (active.classList.contains("trip-head")) keep = { head: [...out.querySelectorAll(".trip-head")].indexOf(active) };
+      else if (active.classList.contains("refresh")) keep = { refresh: true };
+    }
+    const result = renderResultsNow();
+    if (keep) {
+      const target = keep.refresh ? out.querySelector(".refresh") : out.querySelectorAll(".trip-head")[keep.head];
+      if (target) target.focus({ preventScroll: true });
+    }
+    return result;
+  }
+
+  function renderResultsNow() {
     const out = $("out");
     out.replaceChildren();
     $("foot").hidden = !state.data || !state.data.routes.length;
@@ -1341,7 +1373,7 @@
           state.open.add(i);
           hydrateAlts(body, i, r);
           showRouteMap(body, r);
-          trip.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); // aufgeklappte Verbindung fuellt den Bildschirm
+          trip.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" }); // aufgeklappte Verbindung fuellt den Bildschirm
         } else {
           state.open.delete(i);
           dropRouteMap(r.key);
@@ -1371,9 +1403,11 @@
       m.append(document.createElement("br"), b);
     }
     out.append(m);
+    announce(text ? `${title}. ${text}` : title);
   }
 
   function showSkeleton() {
+    announce("Suche läuft …");
     const out = $("out");
     out.replaceChildren();
     for (let i = 0; i < 2; i++) {
@@ -1435,7 +1469,8 @@
         await autoFixAll(fresh);
         state.data = fresh;
         state.fetchedAt = Date.now();
-        return renderResults();
+        renderResults();
+        return announce("Verbindungen aktualisiert");
       }
       const [from, to] = [await resolve(fields.from, signal), await resolve(fields.to, signal)];
       for (const [which, place] of [["from", from], ["to", to]]) {
@@ -1464,7 +1499,12 @@
       state.refreshError = "";
       state.open = new Set([0]);
       renderResults();
-      if ($("out").getBoundingClientRect().top > innerHeight * 0.55) $("out").scrollIntoView({ block: "start", behavior: "smooth" });
+      const n = state.data.routes.length;
+      announce(n ? `${n} ${n === 1 ? "Verbindung" : "Verbindungen"} gefunden` : "Keine Verbindung gefunden");
+      // Fokus zu den Ergebnissen: das Tastaturfeld schliesst sich, Tastatur und Screenreader beginnen bei der ersten Verbindung
+      const first = $("out").querySelector(".trip-head") || $("out");
+      first.focus({ preventScroll: true });
+      if ($("out").getBoundingClientRect().top > innerHeight * 0.55) $("out").scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
     } catch (e) {
       if (e && e.name === "AbortError") return;
       if (again) {
@@ -1529,7 +1569,7 @@
     });
     $("search").addEventListener("submit", (e) => {
       e.preventDefault();
-      document.activeElement && document.activeElement.blur && document.activeElement.blur();
+      document.activeElement && document.activeElement.blur && document.activeElement.blur(); // Handytastatur sofort schliessen; der Fokus wandert nach dem Ergebnis zur ersten Verbindung
       search();
     });
     setInterval(() => {

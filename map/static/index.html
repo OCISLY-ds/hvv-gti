@@ -11,8 +11,8 @@
 <meta name="apple-mobile-web-app-title" content="Routenplaner">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>HVV Routenplaner</title>
-<link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="route.css">
 </head>
 <body>
@@ -65,7 +65,8 @@
 
   <div id="savedbar" class="savedbar" hidden></div>
 
-  <section id="out" aria-live="polite" aria-busy="false"></section>
+  <p id="status" class="sr" role="status"></p>
+  <section id="out" aria-busy="false" aria-label="Verbindungen" tabindex="-1"></section>
   <footer class="foot" id="foot" hidden>Wahrscheinlichkeiten aus den Verspätungen, die dieser Dienst seit Ende Oktober gemessen hat. Zeiten mit Funksymbol sind Echtzeitprognosen.</footer>
 </main>
 <script src="route.js"></script>
