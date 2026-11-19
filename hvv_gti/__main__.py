@@ -135,7 +135,8 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
 
     token = cfg.influx_read_token or cfg.influx_token
     reader = InfluxReader(cfg.influx_url, cfg.influx_org, cfg.influx_bucket, token) if token and cfg.influx_org else None
-    planner = Planner(client, Reliability(reader))
+    reliability = Reliability(reader)
+    planner = Planner(client, reliability)
     planner.shaper = feed.shape
     icons = IconStore(args.icons_dir, client)
     app = web.MapApp(feed, icons, Path(args.static_dir), data_dir, planner, args.planner_rate, live=args.live_map)
@@ -147,6 +148,8 @@ def cmd_serve_map(cfg: Config, args: argparse.Namespace) -> int:
     stop_event = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop_event.set())
+    if reader is not None and not args.no_prewarm:
+        reliability.start_warming(stop_event)
     web.serve(app, args.host, args.port, stop_event)
     return 0
 
@@ -196,6 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", type=float, default=30.0, help="Sekunden zwischen GTI-Abfragen")
     p.add_argument("--window", type=int, default=300, help="Vorausschau in Sekunden")
     p.add_argument("--live-map", action="store_true", help="die Live-Karte (live.html) einschalten; ohne bleibt nur der Routenplaner und es gibt keine Fahrzeugabrufe")
+    p.add_argument("--no-prewarm", action="store_true", help="haeufige Linien nicht im Hintergrund vorrechnen (Zuverlaessigkeit wird erst bei der ersten Anfrage aus Influx gelesen)")
     p.add_argument("--no-xbus", action="store_true", help="die X-Busse (Xpressbus) nicht abfragen und nicht auf der Karte anbieten")
     p.add_argument("--learn-span", type=int, default=5400, help="beim ersten Start ohne tracks.json Gleise aus +-N Sekunden um jetzt vorlernen (0 = aus)")
     p.add_argument("--planner-rate", type=int, default=60, help="Abfahrten/Routen/Stationssuche je Client-IP und Minute (0 = unbegrenzt)")

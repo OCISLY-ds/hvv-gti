@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from array import array
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,15 @@ SIMULATIONS = 4000
 TRANSFER_STEPS = range(0, 6)  # waehlbare Mindest-Umsteigezeit in Minuten (Regler in der Karte); 0 = nur der Fahrplan der GTI
 LOOKBACK = "-30d"
 CACHE_S = 600
+# Haeufige Linien werden im Hintergrund vorgerechnet, damit die erste Anfrage nicht auf Influx wartet: die WARM_PAIRS meistgemessenen
+# (Linie, Halt)-Paare der letzten RANK_LOOKBACK (je Linie die WARM_PER_LINE haeufigsten Halte, sonst verdraengen Linien mit vielen
+# Messungen wie Bus 5 oder U3 alle anderen) samt ihrer Linien und Ausfallraten. Die Runde laeuft vor Ablauf von CACHE_S.
+WARM_PAIRS = 150
+WARM_PER_LINE = 5
+WARM_EVERY_S = 480
+WARM_PAUSE_S = 0.2  # zwischen zwei Abfragen, damit Influx (auf dem Pi knapp bei Speicher) nicht am Stueck belastet wird
+RANK_LOOKBACK = "-7d"
+RANK_EVERY_S = 3600
 
 # Messung je Linienart (hvv_stop_event zusaetzlich fuer Ausfaelle)
 # Busse (B): Bus 5 hat Halt fuer Halt Messwerte (hvv_bus_stop); alle anderen Buslinien (4, 234, ...) kennt nur die Abfahrtstafel
@@ -84,6 +94,23 @@ def flux_str(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("${", "\\${") + '"'
 
 
+class Samples:
+    """Messreihe (Zeitstempel, Verspaetung) in zwei `array`s statt als Liste von Tupeln (rund 6x weniger Speicher im Zwischenspeicher)."""
+
+    __slots__ = ("ts", "values")
+
+    def __init__(self, rows):
+        rows = list(rows)
+        self.ts = array("d", (t for t, _ in rows))
+        self.values = array("d", (v for _, v in rows))
+
+    def __len__(self):
+        return len(self.ts)
+
+    def __iter__(self):
+        return zip(self.ts, self.values)
+
+
 class InfluxReader:
     def __init__(self, url: str, org: str, bucket: str, token: str, timeout: float = 20.0):
         self.url = f"{url.rstrip('/')}/api/v2/query?{urllib.parse.urlencode({'org': org})}"
@@ -129,6 +156,20 @@ class InfluxReader:
             except (KeyError, ValueError):
                 continue
         return out
+
+    def frequent(self, limit: int) -> list[tuple[str, str, str]]:
+        """Je Linie die WARM_PER_LINE meistgemessenen Halte der letzten RANK_LOOKBACK, hoechstens `limit` (Messung, Linie, Halt) insgesamt
+        (nur Messreihen mit Halt-fuer-Halt-Werten)."""
+        names = sorted({m for ms in MEASUREMENTS.values() for m in ms if m not in CANCEL_MEASUREMENTS})
+        measurements = " or ".join(f'r._measurement == "{m}"' for m in names)
+        flux = (
+            f'from(bucket: {flux_str(self.bucket)}) |> range(start: {RANK_LOOKBACK}) '
+            f'|> filter(fn: (r) => ({measurements}) and r._field == "delay_s") '
+            '|> group(columns: ["_measurement", "line", "station"]) |> count() '
+            f'|> group(columns: ["_measurement", "line"]) |> top(n: {WARM_PER_LINE}, columns: ["_value"]) |> group() '
+            f'|> sort(columns: ["_value"], desc: true) |> limit(n: {int(limit)})'
+        )
+        return [(row["_measurement"], row["line"], row["station"]) for row in self.query(flux) if row.get("line") and row.get("station")]
 
     def train_delays(self, line: str, station: str, direction: str) -> list[tuple[float, float]]:
         """Wie `delays`, aber aus den Zuglaeufen des Korridors (hvv_train_stop, delay_min) fuer eine Fahrtrichtung."""
@@ -189,16 +230,88 @@ class Reliability:
         self.rng = rng or random.Random()
         self._cache: dict[tuple, tuple[float, object]] = {}
         self._lock = threading.Lock()
+        self._pairs: list[tuple[str, str, str]] | None = None
+        self._pairs_at = 0.0
 
-    def _cached(self, key: tuple, fetch):
+    def _fetcher(self, key: tuple):
+        """Abfrage zu einem Zwischenspeicher-Schluessel: ("d", Messung, Linie, Halt|None), ("t", Linie, Halt, Richtung) oder ("c", Linie)."""
+        kind = key[0]
+        if kind == "d":
+            return lambda: Samples(self.reader.delays(key[1], key[2], key[3]))
+        if kind == "t":
+            return lambda: Samples(self.reader.train_delays(key[1], key[2], key[3]))
+        return lambda: self.reader.cancel_rate(key[1])
+
+    def _store(self, key: tuple, value) -> None:
+        with self._lock:
+            self._cache[key] = (time.monotonic(), value)
+
+    def _cached(self, key: tuple):
         with self._lock:
             hit = self._cache.get(key)
             if hit and time.monotonic() - hit[0] < CACHE_S:
                 return hit[1]
-        value = fetch()
-        with self._lock:
-            self._cache[key] = (time.monotonic(), value)
+        value = self._fetcher(key)()
+        self._store(key, value)
         return value
+
+    # ---- Vorrechnen haeufiger Linien ----
+
+    def warm_once(self) -> int:
+        """Holt die Messreihen der haeufigsten (Linie, Halt)-Paare, ihrer Linien und die Ausfallraten frisch in den Zwischenspeicher.
+        Gibt die Zahl der aufgefuellten Eintraege zurueck (0 ohne Influx oder ohne Rangliste)."""
+        if self.reader is None or not hasattr(self.reader, "frequent"):
+            return 0
+        now = time.monotonic()
+        if self._pairs is None or now - self._pairs_at >= RANK_EVERY_S:
+            try:
+                self._pairs, self._pairs_at = self.reader.frequent(WARM_PAIRS), now
+            except OSError as exc:
+                log.warning("Vorrechnen: Rangliste nicht lesbar: %s", exc)
+                if self._pairs is None:
+                    return 0
+        keys: list[tuple] = []
+        lines: dict[tuple[str, str], None] = {}
+        for measurement, line, station in self._pairs:
+            keys.append(("d", measurement, line, station))
+            lines[(measurement, line)] = None
+        for measurement, line in lines:
+            keys.append(("d", measurement, line, None))
+        for line in dict.fromkeys(line for _, line in lines):
+            if data_mode(line) is not None:
+                keys.append(("c", line))
+        if hasattr(self.reader, "train_delays"):
+            keys += [("t", line, *proxy) for (line, _), proxy in PROXY_ARRIVALS.items()]
+        done = 0
+        for key in dict.fromkeys(keys):
+            try:
+                self._store(key, self._fetcher(key)())
+                done += 1
+            except OSError as exc:
+                log.warning("Vorrechnen %s: %s", key[:3], exc)
+            time.sleep(WARM_PAUSE_S)
+        with self._lock:  # lange nicht mehr gefragte Eintraege nicht ewig behalten
+            for old in [k for k, (at, _) in self._cache.items() if time.monotonic() - at > 3 * CACHE_S]:
+                del self._cache[old]
+        return done
+
+    def start_warming(self, stop: threading.Event) -> threading.Thread:
+        def run():
+            if stop.wait(5):
+                return
+            while True:
+                started = time.monotonic()
+                try:
+                    done = self.warm_once()
+                    log.info("Vorgerechnet: %d Messreihen in %.0f s", done, time.monotonic() - started)
+                except Exception:
+                    log.exception("Vorrechnen fehlgeschlagen")
+                if stop.wait(WARM_EVERY_S):
+                    return
+
+        thread = threading.Thread(target=run, name="planner-warm", daemon=True)
+        thread.start()
+        return thread
 
     def distribution(self, line: str, station: str, when: datetime) -> dict | None:
         """{"values": [...], "n": int, "scope": str} der Verspaetungen (s) oder None ohne Messreihe."""
@@ -207,7 +320,7 @@ class Reliability:
             return None
         proxy = PROXY_ARRIVALS.get((line, station))
         if proxy and hasattr(self.reader, "train_delays"):
-            found = self._cached(("t", line, *proxy), lambda: self.reader.train_delays(line, *proxy))
+            found = self._cached(("t", line, *proxy))
             if len(found) >= MIN_STATION_SAMPLES:
                 values, window = pick_window(found, when)
                 return {"values": values, "n": len(values), "scope": f"Vorhalt {proxy[0]}", "window": window}
@@ -215,7 +328,7 @@ class Reliability:
         def collect(where: str | None) -> list[tuple[float, float]]:
             found: list[tuple[float, float]] = []
             for measurement in MEASUREMENTS[mode]:
-                found += self._cached(("d", measurement, line, where), lambda m=measurement: self.reader.delays(m, line, where))
+                found += self._cached(("d", measurement, line, where))
             return found
 
         samples = collect(station)
@@ -231,7 +344,7 @@ class Reliability:
     def cancel_rate(self, line: str) -> dict | None:
         if self.reader is None or data_mode(line) is None:
             return None
-        found = self._cached(("c", line), lambda: self.reader.cancel_rate(line))
+        found = self._cached(("c", line))
         return {"n": found[0], "rate": found[1]} if found else None
 
     def assess(self, legs: list[dict], when: datetime) -> dict:

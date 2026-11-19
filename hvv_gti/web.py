@@ -496,7 +496,12 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _json(self, obj, status: int = 200) -> None:
-        self._send(status, json.dumps(obj, separators=(",", ":")).encode(), "application/json; charset=utf-8", {"Cache-Control": "no-store"})
+        body = json.dumps(obj, separators=(",", ":")).encode()
+        headers = {"Cache-Control": "no-store", "Vary": "Accept-Encoding"}
+        if len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):  # Routen sind 20+ KB, gepackt etwa ein Siebtel
+            body = gzip.compress(body, 5)
+            headers["Content-Encoding"] = "gzip"
+        self._send(status, body, "application/json; charset=utf-8", headers)
 
     def do_HEAD(self):
         self.do_GET()

@@ -560,3 +560,66 @@ class StayOnBoardTest(unittest.TestCase):
         legs = normalize_route(self.schedule([]))
         second = [leg for leg in legs if leg.get("line")][1]
         self.assertNotIn("stay", second["transfer"])
+
+
+class PrewarmTests(unittest.TestCase):
+    when = datetime(2026, 11, 7, 13, 23, tzinfo=TZ)
+
+    def setUp(self):
+        self.enterContext(unittest.mock.patch.object(planner, "WARM_PAUSE_S", 0))
+        self.noon = datetime(2026, 11, 3, 13, 0, tzinfo=TZ).timestamp()
+
+    def reader(self, calls):
+        noon = self.noon
+
+        class Stub:
+            def frequent(self, limit):
+                calls.append(("frequent", limit))
+                return [("hvv_network_stop", "S1", "Altona"), ("hvv_network_stop", "S1", "Berliner Tor"), ("hvv_network_stop", "S3", "Altona")]
+
+            def delays(self, measurement, line, station):
+                calls.append(("delays", measurement, line, station))
+                return [(noon + i, 60.0 * (i % 3)) for i in range(150)]
+
+            def train_delays(self, line, station, direction):
+                calls.append(("train", line, station, direction))
+                return [(noon + i, 0.0) for i in range(150)]
+
+            def cancel_rate(self, line):
+                calls.append(("cancel", line))
+                return (200, 0.01)
+
+        return Stub()
+
+    def test_warming_fetches_pairs_lines_and_cancel_rates_once_and_requests_hit_the_cache(self):
+        calls = []
+        r = Reliability(self.reader(calls), random.Random(1))
+        self.assertEqual(r.warm_once(), 3 + 2 + 2 + 1)  # 3 Paare, 2 Linien gesamt, 2 Ausfallraten, S5-Dollern-Vorhalt
+        asked = len(calls)
+        dist = r.distribution("S1", "Altona", self.when)
+        self.assertEqual(dist["n"], 150)
+        self.assertEqual(r.cancel_rate("S1"), {"n": 200, "rate": 0.01})
+        self.assertEqual(len(calls), asked, "nach dem Vorrechnen darf eine Anfrage nicht mehr zu Influx gehen")
+
+    def test_the_ranking_is_read_only_once_per_hour(self):
+        calls = []
+        r = Reliability(self.reader(calls), random.Random(1))
+        r.warm_once()
+        r.warm_once()
+        self.assertEqual([c for c in calls if c[0] == "frequent"], [("frequent", planner.WARM_PAIRS)])
+
+    def test_an_unreachable_influx_is_survived(self):
+        class Down:
+            def frequent(self, limit):
+                raise OSError("Influx: weg")
+
+        r = Reliability(Down(), random.Random(1))
+        self.assertEqual(r.warm_once(), 0)
+        self.assertEqual(Reliability(None).warm_once(), 0)
+
+    def test_samples_behave_like_a_list_of_pairs(self):
+        s = planner.Samples([(1.5, 60.0), (2.5, 0.0)])
+        self.assertEqual((len(s), list(s)), (2, [(1.5, 60.0), (2.5, 0.0)]))
+        found = []
+        found += s
+        self.assertEqual(found, [(1.5, 60.0), (2.5, 0.0)])

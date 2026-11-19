@@ -412,6 +412,27 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual((status, headers.get("Content-Encoding"), body), (200, None, b"y" * 5000))
         self.assertEqual(fetch("/vendor/lib.js")[1]["Cache-Control"], "public, max-age=86400")
 
+    def test_large_api_answers_are_gzipped_only_when_asked_for(self):
+        import urllib.request
+
+        base, gti, _ = self._serve(live=False)
+        gti.responses["checkName"] = {"returnCode": "OK", "results": [
+            {"id": str(i), "type": "ADDRESS", "name": f"Leuschnerstraße {i}", "city": "Hamburg", "combinedName": f"Leuschnerstraße {i}, Hamburg", "coordinate": {"x": 10.2, "y": 53.49}}
+            for i in range(30)]}
+
+        def fetch(**headers):
+            with urllib.request.urlopen(urllib.request.Request(base + "/api/places?q=Leuschner", headers=headers), timeout=5) as r:
+                return dict(r.headers), r.read()
+
+        plain_headers, plain = fetch()
+        packed_headers, packed = fetch(**{"Accept-Encoding": "gzip"})
+        self.assertGreater(len(plain), 1024)
+        self.assertIsNone(plain_headers.get("Content-Encoding"))
+        self.assertEqual(packed_headers["Content-Encoding"], "gzip")
+        self.assertEqual(packed_headers["Vary"], "Accept-Encoding")
+        self.assertEqual(gzip.decompress(packed), plain)
+        self.assertLess(len(packed), len(plain) / 2)
+
     def test_course_endpoint_returns_every_stop_of_the_trip(self):
         import urllib.parse
 
