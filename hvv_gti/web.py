@@ -5,6 +5,7 @@ offen sind. Die Seite interpoliert die Zugpositionen selbst aus den Segmentzeite
 """
 
 import gzip
+import hashlib
 import ipaddress
 import json
 import logging
@@ -651,10 +652,19 @@ class Handler(BaseHTTPRequestHandler):
         etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
         # vendor/ und Icons aendern sich praktisch nie (1 MB MapLibre nicht bei jedem Aufruf neu laden); alles andere wird nur nachgefragt (304)
         cache = "public, max-age=86400" if rel.startswith("vendor/") or rel.endswith((".png", ".svg")) else "no-cache"
+        # route.css/route.js tragen in der Startseite ?v=<Version>: Proxys und Browser (Cloudflare setzt sonst 4 h max-age) laden bei jeder Aenderung neu
+        versioned = rel in VERSIONED_ASSETS and "v=" in urlsplit(self.path).query
+        if versioned:
+            cache = "public, max-age=31536000, immutable"
+        index_body = None
+        if rel == "index.html":
+            ver = self.app.asset_version()
+            index_body = _versioned_index(target.read_bytes(), ver)
+            etag = f'"{ver}-{len(index_body):x}"'
         headers = {"ETag": etag, "Cache-Control": cache, "Vary": "Accept-Encoding"}
         if self.headers.get("If-None-Match") == etag:
             return self._send(304, b"", ctype, headers)
-        body = target.read_bytes() if stat.st_size <= STATIC_GZIP_MAX else None
+        body = index_body if index_body is not None else (target.read_bytes() if stat.st_size <= STATIC_GZIP_MAX else None)
         if body is not None and ctype.split(";")[0] in COMPRESSIBLE and len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
             body = _gzipped(target, etag, body)
             headers["Content-Encoding"] = "gzip"
@@ -707,6 +717,16 @@ class Handler(BaseHTTPRequestHandler):
 STATIC_GZIP_MAX = 2_000_000
 COMPRESSIBLE = {"text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml", "application/manifest+json", "application/x-javascript"}
 _GZ_CACHE: dict[str, tuple[str, bytes]] = {}  # Pfad -> (ETag, komprimierter Inhalt): jede Datei nur einmal packen
+
+
+VERSIONED_ASSETS = ("route.css", "route.js")
+
+
+def _versioned_index(html: bytes, ver: str) -> bytes:
+    """Startseite mit Versionsparameter an den eigenen CSS/JS-Dateien (Cache-Busting)."""
+    for name in VERSIONED_ASSETS:
+        html = html.replace(f'"{name}"'.encode(), f'"{name}?v={ver}"'.encode())
+    return html
 
 
 def _gzipped(path: Path, etag: str, body: bytes) -> bytes:
@@ -769,6 +789,17 @@ class MapApp:
         self.feed, self.icons, self.static_dir, self.data_dir, self.planner = feed, icons, static_dir, data_dir, planner
         self.live = live  # False: nur Routenplaner, keine Fahrzeugabrufe (getVehicleMap) fuer die Karte
         self.limiter = RateLimiter(planner_rate)
+
+    def asset_version(self) -> str:
+        """Kurze Version der Planer-Dateien (aus Aenderungszeit und Groesse), ändert sich bei jedem Neubau."""
+        parts = []
+        for name in (*VERSIONED_ASSETS, "index.html"):
+            try:
+                st = (self.static_dir / name).stat()
+                parts.append(f"{st.st_mtime_ns}:{st.st_size}")
+            except OSError:
+                parts.append("-")
+        return hashlib.sha1("|".join(parts).encode()).hexdigest()[:10]
 
     def tiles_file(self) -> Path:
         return self.data_dir / "hamburg.pmtiles"

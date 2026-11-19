@@ -481,3 +481,14 @@ class PlannerOnlyServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionedIndexTest(unittest.TestCase):
+    def test_index_links_get_a_version_so_proxy_caches_cannot_serve_stale_files(self):
+        from hvv_gti.web import _versioned_index
+
+        html = b'<link rel="stylesheet" href="route.css"><script src="route.js"></script><link href="icon.svg">'
+        out = _versioned_index(html, "abc123").decode()
+        self.assertIn('href="route.css?v=abc123"', out)
+        self.assertIn('src="route.js?v=abc123"', out)
+        self.assertIn('href="icon.svg"', out)
