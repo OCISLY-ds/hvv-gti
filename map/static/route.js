@@ -429,6 +429,77 @@
     return box;
   }
 
+  // ---- Fahrtverlauf: alle Halte der Fahrt, der gefahrene Abschnitt hervorgehoben ----
+  const courseCache = new Map();
+  const COURSE_TTL = 30000;
+  const courseKey = (leg) => `${leg.serviceId || ""}|${leg.lineId}|${leg.from.id}|${Math.floor(leg.dep / 60)}`;
+  const peekCourse = (leg) => (courseCache.get(courseKey(leg)) || {}).stops || null; // auch veraltet: besser als "laedt" bei jeder Aktualisierung
+  function loadCourse(leg) {
+    const key = courseKey(leg);
+    const hit = courseCache.get(key);
+    if (hit && hit.stops && Date.now() - hit.at < COURSE_TTL) return Promise.resolve(hit.stops);
+    if (hit && hit.pending) return hit.pending;
+    const params = new URLSearchParams({ line: leg.lineId, station: leg.from.id, time: String(Math.floor(leg.dep)), dir: leg.direction || "" });
+    if (leg.serviceId) params.set("service", String(leg.serviceId));
+    const pending = getJson(`/api/course?${params}`).then((d) => {
+      courseCache.set(key, { at: Date.now(), stops: d.stops });
+      return d.stops;
+    });
+    courseCache.set(key, { ...(hit || {}), pending });
+    pending.catch(() => courseCache.delete(key));
+    return pending;
+  }
+
+  // Einstieg und Ausstieg im Verlauf: dieselbe Haltestelle kann zweimal vorkommen, deshalb zaehlt bei der Starthaltestelle auch die Zeit
+  function ridden(stops, leg) {
+    let from = stops.findIndex((s) => s.id === leg.from.id && s.dep && Math.abs(s.dep - leg.dep) <= 120);
+    if (from < 0) from = stops.findIndex((s) => s.id === leg.from.id);
+    const to = from < 0 ? -1 : stops.findIndex((s, i) => i > from && s.id === leg.to.id);
+    return from >= 0 && to > from ? [from, to] : [-1, -1];
+  }
+
+  function renderCourse(panel, leg, stops) {
+    panel.replaceChildren();
+    if (!stops.length) return panel.append(node("div", "state", "Für diese Fahrt liegt kein Verlauf vor."));
+    const [from, to] = ridden(stops, leg);
+    const list = node("ol", "course-list");
+    list.setAttribute("aria-label", `Fahrtverlauf ${leg.line} Richtung ${leg.direction || ""}`);
+    stops.forEach((s, i) => {
+      const inside = i >= from && i <= to && from >= 0;
+      const row = node("li", "cstop" + (inside ? " in" : from >= 0 ? " out" : "") + (i === 0 ? " first" : "") + (i === stops.length - 1 ? " last" : "") + (s.cancelled ? " gone" : ""));
+      const at = s.dep || s.arr;
+      const delay = s.dep ? s.depDelayMin : s.arrDelayMin;
+      const t = node("span", "tm2 " + (known(delay) ? delayClass(delay) : ""), at ? hhmm(at + (delay || 0) * 60) : "");
+      const rail = node("span", "rl");
+      rail.setAttribute("aria-hidden", "true");
+      const name = node("span", "nm2", s.name || "–");
+      if (i === from) name.append(node("small", "tag", "Einstieg"));
+      if (i === to) name.append(node("small", "tag", "Ausstieg"));
+      if (s.cancelled) name.append(node("small", "tag bad", "Halt entfällt"));
+      row.append(t, rail, name);
+      if (delay) row.append(node("span", "dm " + delayClass(delay), signed(delay)));
+      list.append(row);
+    });
+    panel.append(node("div", "info", `${stops.length} Haltestellen von ${stops[0].name} bis ${stops[stops.length - 1].name}`), list);
+  }
+
+  function showCourse(panel, leg) {
+    panel.style.setProperty("--c", lineColor(leg));
+    const stale = peekCourse(leg);
+    if (stale) renderCourse(panel, leg, stale);
+    else panel.replaceChildren(node("div", "state", "Fahrtverlauf wird geladen …"));
+    loadCourse(leg)
+      .then((stops) => panel.isConnected && renderCourse(panel, leg, stops))
+      .catch((e) => {
+        if (!panel.isConnected || stale) return; // ein veralteter Verlauf bleibt stehen
+        const box = node("div", "state err", `Fahrtverlauf nicht abrufbar: ${e.message}`);
+        const retry = node("button", "link", "Erneut versuchen");
+        retry.type = "button";
+        retry.addEventListener("click", () => showCourse(panel, leg));
+        panel.replaceChildren(box, retry);
+      });
+  }
+
   function rideCard(leg, legIndex, ctx) {
     const card = node("div", "leg");
     card.style.setProperty("--c", lineColor(leg));
@@ -440,9 +511,33 @@
     logo.append(badge(leg.line, leg.mode));
     rail.append(logo);
     const body = node("div", "body");
-    const dir = node("div", "dir" + (leg.cancelled ? " gone" : ""));
+    // "Richtung XY" klappt den ganzen Fahrtverlauf auf (alle Halte von der Starthaltestelle bis zum Ziel der Linie)
+    const canCourse = !!(leg.from && leg.from.id && leg.dep && (leg.serviceId || leg.lineId));
+    const openKey = `${ctx && ctx.route ? ctx.route.key : ""}:${legIndex}`;
+    const dir = node(canCourse ? "button" : "div", "dir" + (leg.cancelled ? " gone" : "") + (canCourse ? " has-course" : ""));
     dir.append(node("span", "", `Richtung ${leg.direction || "–"}`));
     body.append(dir);
+    if (canCourse) {
+      dir.type = "button";
+      const panel = node("div", "course");
+      const isOpen = state.courseOpen.has(openKey);
+      panel.hidden = !isOpen;
+      dir.append(icon("chevron"));
+      dir.setAttribute("aria-expanded", String(isOpen));
+      dir.classList.toggle("open", isOpen);
+      body.append(panel);
+      if (isOpen) showCourse(panel, leg);
+      dir.addEventListener("click", () => {
+        const open = panel.hidden;
+        panel.hidden = !open;
+        dir.setAttribute("aria-expanded", String(open));
+        dir.classList.toggle("open", open);
+        if (open) {
+          state.courseOpen.add(openKey);
+          showCourse(panel, leg);
+        } else state.courseOpen.delete(openKey);
+      });
+    }
     if (ctx && leg.from.id && !leg.cancelled) {
       const alts = node("div", "alts");
       alts.hidden = true;
@@ -855,7 +950,7 @@
 
   // ---- Seite ----
 
-  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), stopsOpen: new Set(), ignore: new Set(), saved: null, lastLevel: "", sig: "", altError: null, rerouting: false };
+  const state = { data: null, open: new Set([0]), controller: null, busy: false, fetchedAt: 0, lastTry: 0, last: null, refreshError: "", altOpen: new Set(), stopsOpen: new Set(), courseOpen: new Set(), ignore: new Set(), saved: null, lastLevel: "", sig: "", altError: null, rerouting: false };
   let fields = null;
 
   const nowLocalInput = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -1499,6 +1594,7 @@
       state.sig = sigOf(state.data.routes);
       state.altOpen.clear();
       state.stopsOpen.clear();
+      state.courseOpen.clear();
       state.altError = null;
       state.last = { params: params.toString(), from: from.label, to: to.label, fromPlace: from, toPlace: to };
       await adoptSaved(state.data);

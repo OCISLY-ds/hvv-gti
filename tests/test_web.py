@@ -407,6 +407,29 @@ class PlannerOnlyServerTest(unittest.TestCase):
         self.assertEqual((status, headers.get("Content-Encoding"), body), (200, None, b"y" * 5000))
         self.assertEqual(fetch("/vendor/lib.js")[1]["Cache-Control"], "public, max-age=86400")
 
+    def test_course_endpoint_returns_every_stop_of_the_trip(self):
+        import urllib.parse
+
+        base, gti, _ = self._serve(live=False)
+        gti.responses["departureCourse"] = {
+            "returnCode": "OK",
+            "courseElements": [
+                {"fromStation": {"id": "Master:1", "name": "A", "coordinate": {"x": 10.0, "y": 53.5}}, "toStation": {"id": "Master:2", "name": "B"}, "depTime": "2026-11-19T02:00:00.000+0100", "arrTime": "2026-11-19T02:03:00.000+0100", "arrDelay": 60},
+                {"fromStation": {"id": "Master:2", "name": "B"}, "toStation": {"id": "Master:3", "name": "C"}, "depTime": "2026-11-19T02:04:00.000+0100", "depDelay": 120, "arrTime": "2026-11-19T02:08:00.000+0100", "fromPlatform": "2"},
+            ],
+        }
+        query = urllib.parse.urlencode({"line": "de:hvv:641:", "station": "Master:2", "time": "1763514240", "dir": "C", "service": "108421"})
+        status, body = self._get(base, "/api/course?" + query)
+        self.assertEqual(status, 200)
+        stops = json.loads(body)["stops"]
+        self.assertEqual([s["name"] for s in stops], ["A", "B", "C"])
+        self.assertEqual([s["arrDelayMin"] for s in stops], [None, 1, None])
+        self.assertEqual((stops[1]["depDelayMin"], stops[1]["platform"], stops[0]["x"]), (2, "2", 10.0))
+        sent = [payload for path, payload, _ in gti.requests if path.endswith("departureCourse")]
+        self.assertEqual((sent[0]["lineId"], sent[0]["serviceId"], sent[0]["station"]["id"]), ("de:hvv:641:", 108421, "Master:2"))
+        for bad in ({"line": "de:hvv:641:", "station": "x y", "time": "1"}, {"line": "a b", "station": "Master:2", "time": "1"}, {"line": "L", "station": "Master:2", "time": "abc"}):
+            self.assertEqual(self._get(base, "/api/course?" + urllib.parse.urlencode(bad))[0], 400)
+
     def test_alternatives_and_reroute_endpoints_validate_their_input(self):
         import urllib.error
         import urllib.parse

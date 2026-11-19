@@ -332,6 +332,7 @@ PLACE_TYPES = ("STATION", "ADDRESS", "POI", "COORDINATE")
 NEAR_STATION_M = 400  # weiter weg ist eine Haltestelle keine sinnvolle Ortsangabe fuer den Standort
 PLACE_CACHE_S = 3600
 PLACE_CACHE_MAX = 500
+COURSE_TTL_S = 30
 LON_RANGE, LAT_RANGE = (5.0, 16.0), (47.0, 56.0)  # Deutschland samt Rand; alles andere kann der HVV-Dienst ohnehin nicht routen
 
 
@@ -378,6 +379,7 @@ class Planner:
         self.reliability = reliability
         self._departures: dict[str, tuple[float, dict]] = {}
         self._places: dict[str, tuple[float, list[dict]]] = {}
+        self._courses: dict[str, tuple[float, dict]] = {}
         self._lock = threading.Lock()
         self.shaper = None  # Callable(leg) -> flache Koordinatenliste entlang der Gleise; setzt der Server, ohne bleibt die Karte gerade
 
@@ -581,6 +583,29 @@ class Planner:
             self._departures[key] = (time.monotonic(), {"list": out})
         return out
 
+    def course(self, line_id: str, station_id: str, when: float, direction: str, service_id: int | None) -> dict:
+        """Ganzer Fahrtverlauf (alle Halte von der Starthaltestelle bis zum Ziel der Linie) der Fahrt, die `when` (Plan-Epoche) an `station_id` abfaehrt."""
+        key = f"{service_id or ''}|{line_id}|{station_id}|{int(when) // 60}|{direction}"
+        with self._lock:
+            hit = self._courses.get(key)
+        if hit and time.monotonic() - hit[0] < COURSE_TTL_S:
+            return hit[1]
+        payload: dict = {
+            "station": {"id": station_id, "type": "STATION"},
+            "time": datetime.fromtimestamp(when, TZ).strftime("%Y-%m-%dT%H:%M:00.000%z"),
+            "direction": direction,
+            "segments": "ALL",
+        }
+        payload["lineId" if line_id.startswith("de:") else "lineKey"] = line_id  # DTID (de:hvv:S1:) oder voller Line Key
+        if service_id:
+            payload["serviceId"] = service_id  # ueberschreibt Zeit und Richtung
+        data = normalize_course(self.client.post("departureCourse", payload))
+        with self._lock:
+            if len(self._courses) >= PLACE_CACHE_MAX:
+                self._courses.clear()
+            self._courses[key] = (time.monotonic(), data)
+        return data
+
     def alternatives(self, station_id: str, line: str, direction: str, not_before: float, limit: int = 5) -> dict:
         """Weitere Abfahrten derselben Linie in dieselbe Richtung ab `not_before` (Epoche, nach Echtzeit), ohne Ausfaelle."""
         found = []
@@ -643,6 +668,47 @@ class Planner:
         }
 
 
+def normalize_course(response: dict) -> dict:
+    """departureCourse -> {"stops": [{name, id, arr, arrDelayMin, dep, depDelayMin, platform, cancelled, extra, x, y}]}; Epochen, Verspaetung in Minuten."""
+    delay = lambda seconds: None if seconds is None else round(seconds / 60)
+    stamp = lambda value: (parse_iso(value).timestamp() if parse_iso(value) else None)
+    elements = response.get("courseElements") or []
+    stops = []
+    for i, element in enumerate(elements):
+        here, before = element.get("fromStation") or {}, elements[i - 1] if i else {}
+        stops.append(
+            {
+                "name": here.get("name"),
+                "id": here.get("id"),
+                "arr": stamp(before.get("arrTime")),
+                "arrDelayMin": delay(before.get("arrDelay")),
+                "dep": stamp(element.get("depTime")),
+                "depDelayMin": delay(element.get("depDelay")),
+                "platform": element.get("fromRealtimePlatform") or element.get("fromPlatform") or "",
+                "cancelled": bool(element.get("fromCancelled")),
+                "extra": bool(element.get("fromExtra")),
+                **_xy(here),
+            }
+        )
+    if elements:
+        last, end = elements[-1], elements[-1].get("toStation") or {}
+        stops.append(
+            {
+                "name": end.get("name"),
+                "id": end.get("id"),
+                "arr": stamp(last.get("arrTime")),
+                "arrDelayMin": delay(last.get("arrDelay")),
+                "dep": None,
+                "depDelayMin": None,
+                "platform": last.get("toRealtimePlatform") or last.get("toPlatform") or "",
+                "cancelled": bool(last.get("toCancelled")),
+                "extra": bool(last.get("toExtra")),
+                **_xy(end),
+            }
+        )
+    return {"stops": stops}
+
+
 def _xy(place: dict) -> dict:
     """Laengen-/Breitengrad einer GTI-Haltestelle als {"x", "y"} fuer die Kartenansicht; leer, wenn die GTI keine Koordinate liefert."""
     coordinate = place.get("coordinate") or {}
@@ -674,6 +740,8 @@ def normalize_route(schedule: dict) -> list[dict]:
                     "depDelayMin": None if src.get("depDelay") is None else round(src["depDelay"] / 60),
                     "arrDelayMin": None if dst.get("arrDelay") is None else round(dst["arrDelay"] / 60),
                     "cancelled": bool(element.get("cancelled")),
+                    "serviceId": element.get("serviceId"),  # Fahrt-ID: macht aus Linie + Richtung + Zeit eine eindeutige Fahrt (Fahrtverlauf)
+                    "lineId": line.get("dlid") or line.get("id") or "",
                     **ride_details(element, line, dep, arr),
                 }
             )

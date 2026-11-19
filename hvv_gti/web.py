@@ -543,7 +543,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, body, "application/json; charset=utf-8", {"Content-Encoding": "gzip", "ETag": etag, "Cache-Control": "no-cache"})
             if path == "/api/config":
                 return self._json({"tiles": self.app.tiles_file().exists(), "tilesUrl": "/tiles/hamburg.pmtiles", "refreshS": self.app.feed.refresh_s, "xbus": "XPRESSBUS" in self.app.feed.vehicle_types, "bus": [l for l in (self.app.feed.bus.lines if self.app.feed.bus else ())]})
-            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route", "/api/alternatives", "/api/reverse"):
+            if path in ("/api/stations", "/api/places", "/api/departures", "/api/route", "/api/alternatives", "/api/reverse", "/api/course"):
                 return self._planner(path)
             if path == "/api/colors":
                 return self._json(self.app.icons.colors())
@@ -588,6 +588,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not station.match(arg("station")) or not 0 < len(arg("line")) <= 20 or len(arg("dir")) > 120:
                     return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
                 return self._json(planner.alternatives(arg("station"), arg("line"), arg("dir"), float(arg("after") or time.time()), min(8, max(1, int(arg("n") or 5)))))
+            if path == "/api/course":
+                line_id = arg("line")
+                service = arg("service")
+                if not station.match(arg("station")) or not re.match(r"^[A-Za-z0-9_.:-]{1,60}$", line_id) or len(arg("dir")) > 120 or (service and not service.isdigit()):
+                    return self._json({"error": "ungueltige Eingabe"}, HTTPStatus.BAD_REQUEST)
+                return self._json(planner.course(line_id, arg("station"), float(arg("time")), arg("dir"), int(service) if service else None))
             if path == "/api/reroute":
                 return self._reroute(planner, body or {})
             start, dest = parse_place(arg("from")), parse_place(arg("to"))  # Haltestellen-ID oder Adresse/Standort als JSON

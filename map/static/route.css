@@ -1,20 +1,21 @@
 /* HVV Routenplaner: Handy zuerst, ab 960 px zwei Spalten. Farben als Tokens, Dunkelmodus folgt dem System.
-   Leitfarbe ist das Hamburg-Rot (#DA121A): Aktionen, Zielmarke, Auswahl, Fokus-Akzent. Schrift ist ein warmes Dunkel mit Ziegelstich,
-   Flaechen sind helles Warmgrau. Gruen und Gold bleiben Statusfarben, "Verspaetet" ist ein dunkleres Weinrot, damit es nicht mit der Markenfarbe verwechselt wird. */
+   Hamburg-Rot (#DA121A) ist nur Akzent: Hauptknopf, Zielmarke, Zielflagge. Alles andere ruht auf einem kuehlen Petrol/Graugruen, der
+   Komplementaerfarbe zu Rot: Flaechen hell und ruhig, Bedienelemente (Links, Chips, Auswahl) in Petrol. Gruen und Gold bleiben Statusfarben,
+   "Verspaetet" ist ein dunkles Weinrot und damit klar etwas anderes als der Akzent. */
 :root {
-  --hh-rot: #da121a;
-  --bg: #f7f4f3;
+  --bg: #f3f6f5;
   --surface: #ffffff;
-  --sunken: #efe9e8;
-  --ink: #2b1a1c;
-  --mute: #6b5558;
-  --line: #e2d7d6;
-  --line-ui: #a8767b; /* Rahmen interaktiver Elemente: >= 3 : 1 auf Flaeche und Feldfuellung (WCAG 1.4.11); --line bleibt fuer Trennlinien */
-  --primary: #da121a;
-  --primary-ink: #b80e16; /* Rot als Text/Symbol auch auf der Feldfuellung (>= 4,5 : 1) */
+  --sunken: #e7edec;
+  --ink: #14282b;
+  --mute: #4f6366;
+  --line: #d5dfde;
+  --line-ui: #688685; /* Rahmen interaktiver Elemente: >= 3 : 1 auf Flaeche und Feldfuellung (WCAG 1.4.11); --line bleibt fuer Trennlinien */
+  --primary: #0b6b73; /* Petrol: Bedienelemente, Links, Auswahl */
   --on-primary: #ffffff;
-  --focus: #2b1a1c;
-  --glow: #da121a;
+  --accent: #da121a; /* Hamburg-Rot: sparsam, nur Hauptknopf und Ziel */
+  --on-accent: #ffffff;
+  --focus: #14282b;
+  --glow: #0b6b73;
   --good: #00722f;
   --good-bg: #e8f3d8;
   --good-fill: #80ba27;
@@ -24,26 +25,27 @@
   --bad: #9c1319;
   --bad-bg: #fbe6e6;
   --bad-fill: #e63328;
-  --shadow: 0 1px 2px rgb(43 26 28 / 8%), 0 4px 14px rgb(43 26 28 / 8%);
+  --shadow: 0 1px 2px rgb(20 40 43 / 8%), 0 4px 14px rgb(20 40 43 / 8%);
   --radius: 18px;
   --tap: 48px;
   --font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif; /* HamburgSans ist nicht frei nutzbar; Arial ist der Ersatz */
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Hamburg-Rot ist auf Dunkel zu dunkel (Text 3,5 : 1): aufgehellt, Flaechen sind abgedunkeltes Weinrot */
-    --bg: #1a0f10;
-    --surface: #2a1719;
-    --sunken: #3a2224;
-    --ink: #f5e9e9;
-    --mute: #c3a9ac;
-    --line: #4a2e31;
-    --line-ui: #9a666b;
-    --primary: #ff5c61;
-    --primary-ink: #ff5c61;
-    --on-primary: #3b0508;
-    --focus: #f5e9e9;
-    --glow: #ff5c61;
+    /* Auf Dunkel werden Petrol und Rot aufgehellt (Text/Symbole >= 4,5 : 1), Flaechen sind tiefes Petrol */
+    --bg: #0f1b1d;
+    --surface: #172a2d;
+    --sunken: #21393d;
+    --ink: #e6f1f1;
+    --mute: #a9c0c2;
+    --line: #2b474b;
+    --line-ui: #5f8689;
+    --primary: #5cc8cf;
+    --on-primary: #062a2d;
+    --accent: #ff5c61;
+    --on-accent: #3b0508;
+    --focus: #e6f1f1;
+    --glow: #5cc8cf;
     --good: #80ba27;
     --good-bg: #243a22;
     --mid: #e4a519;
@@ -64,7 +66,6 @@ body {
   color: var(--ink);
   font: 16px/1.4 var(--font);
   padding-top: env(safe-area-inset-top);
-  box-shadow: inset 0 4px 0 var(--primary); /* Hamburg-Rot als Kante am oberen Rand */
   max-width: 100%;
   overflow-x: clip; /* Netz: nichts darf die Seite breiter als den Bildschirm machen */
 }
@@ -97,7 +98,7 @@ button { cursor: pointer; }
 .field:not(:has(.locate)) input[type="text"] { padding-right: 46px; }
 .mark { position: absolute; left: 16px; top: 50%; width: 14px; height: 14px; margin-top: -7px; pointer-events: none; }
 .mark.from { border: 3px solid var(--ink); border-radius: 50%; background: var(--surface); }
-.mark.to { left: 14px; width: 18px; height: 18px; margin-top: -9px; color: var(--primary); } /* Ziel-Pin (Bootstrap Icons geo-alt-fill) */
+.mark.to { left: 14px; width: 18px; height: 18px; margin-top: -9px; color: var(--accent); } /* Ziel-Pin (Bootstrap Icons geo-alt-fill) */
 .fields::before { /* gepunktete Linie zwischen Start- und Zielmarke */
   content: "";
   position: absolute;
@@ -207,8 +208,8 @@ button { cursor: pointer; }
   margin-top: 8px;
   border: 0;
   border-radius: 16px;
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -254,7 +255,6 @@ button { cursor: pointer; }
 .pill.bad { background: var(--bad-bg); color: var(--bad); }
 .walk-chip { display: inline-flex; align-items: center; gap: 3px; color: var(--mute); font-size: 13px; }
 .walk-chip svg { width: 18px; height: 18px; }
-.trip.open { box-shadow: var(--shadow), 0 0 0 2px var(--primary); }
 .trip-body { padding: 0 12px 14px; border-top: 1px solid var(--line); }
 
 /* Linienschild */
@@ -298,6 +298,31 @@ button { cursor: pointer; }
 .trip-mid .mode { width: 20px; height: 20px; margin-right: -2px; }
 .dir .mode { width: 22px; height: 22px; }
 
+/* "Richtung XY" als Knopf: klappt den ganzen Fahrtverlauf auf */
+button.dir { display: flex; width: 100%; cursor: pointer; background: none; text-align: left; }
+button.dir svg { flex: none; width: 18px; height: 18px; margin-left: auto; color: var(--primary); transition: transform 0.15s; }
+button.dir.open svg { transform: rotate(180deg); }
+.course { margin: 6px 0 4px; }
+.course .info { margin: 0 0 6px; }
+.course .state { padding: 8px 0; color: var(--mute); font-size: 14px; }
+.course .state.err { color: var(--bad); font-weight: 600; }
+.course-list { margin: 0; padding: 0; list-style: none; }
+.cstop { --rc: var(--c, var(--primary)); display: grid; grid-template-columns: 44px 14px minmax(0, 1fr) auto; align-items: baseline; column-gap: 10px; min-height: 32px; font-size: 14px; }
+.cstop .tm2 { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--mute); }
+.cstop .nm2 { min-width: 0; padding: 5px 0; overflow-wrap: anywhere; }
+.cstop .dm { font-size: 13px; font-weight: 700; }
+.cstop .rl { position: relative; align-self: stretch; }
+.cstop .rl::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: var(--rc); }
+.cstop.first .rl::before { top: 50%; }
+.cstop.last .rl::before { bottom: 50%; }
+.cstop .rl::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 2px var(--rc); }
+.cstop.out { --rc: var(--line-ui); }
+.cstop.out .nm2, .cstop.out .tm2 { color: var(--mute); font-weight: 400; }
+.cstop.in .nm2 { font-weight: 600; }
+.cstop.gone .nm2 { text-decoration: line-through; }
+.cstop .tag { margin-left: 8px; padding: 1px 6px; border-radius: 8px; background: var(--sunken); color: var(--ink); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.cstop .tag.bad { background: var(--bad-bg); color: var(--bad); }
+
 /* Andere Abfahrt derselben Linie ("Auch in 28 min und 48 min") */
 .alts { margin-top: 2px; }
 .alts-toggle { margin-top: 0; color: var(--ink); font-weight: 600; }
@@ -309,7 +334,7 @@ button { cursor: pointer; }
 .alt-m { color: var(--mute); font-size: 13px; }
 .alt-go { color: var(--primary); font-size: 14px; font-weight: 700; }
 .custom-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; margin: 10px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--sunken); color: var(--mute); font-size: 13px; }
-.custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary-ink); font-weight: 700; text-decoration: underline; }
+.custom-note .link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-weight: 700; text-decoration: underline; }
 .status { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--good-bg); color: var(--ink); font-size: 14px; }
 .status strong { display: block; font-size: 15px; margin-bottom: 2px; }
 .status .hint { display: inline; }
@@ -317,7 +342,7 @@ button { cursor: pointer; }
 .status.bad { background: var(--bad-bg); }
 .status.done { background: var(--sunken); }
 .savedbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; margin-top: 10px; padding: 4px 14px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
-.link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary-ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-align: left; }
+.link { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: underline; text-align: left; }
 .save-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; margin-top: 2px; }
 .save-row .hint { font-size: 12.5px; }
 .custom-note.auto { background: var(--mid-bg); color: var(--mid); }
@@ -411,7 +436,7 @@ div.more { cursor: default; }
 .route-map .maplibregl-canvas { outline: none; }
 .map-flag { padding: 3px 8px; margin-bottom: 8px; border-radius: 6px; background: #2b1a1c; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 1px 4px rgb(0 0 0 / 35%); }
 .map-flag::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 2px; height: 6px; margin-left: -1px; background: #2b1a1c; }
-.map-flag.end { background: var(--hh-rot); }
+.map-flag.end { background: var(--accent); color: var(--on-accent); }
 .place { pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 600; color: #5a4b4d; text-shadow: 0 0 3px #f2efe9, 0 0 3px #f2efe9, 0 0 2px #f2efe9; }
 .route-map.dark .place { color: #9fb0c8; text-shadow: 0 0 3px #1b2636, 0 0 3px #1b2636, 0 0 2px #1b2636; }
 .place.c, .place.t { font-size: 14px; font-weight: 700; }
